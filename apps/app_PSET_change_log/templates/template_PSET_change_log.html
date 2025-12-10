@@ -1,0 +1,94 @@
+{% extends base %}
+
+{% block preamble %}
+{{ super() }}
+
+<!-- Global stylesheets -->
+<link href="{{ base_url }}/assets/fonts/inter/inter.css" rel="stylesheet" type="text/css">
+<link href="{{ base_url }}/assets/icons/phosphor/styles.min.css" rel="stylesheet" type="text/css">
+<link href="{{ base_url }}/assets/css/ltr/all.min.css" id="stylesheet" rel="stylesheet" type="text/css">
+<!-- /global stylesheets -->
+{% endblock %}
+
+{% block postamble %}
+{{ super() }}
+<script src="{{ base_url }}/assets/js/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="{{ base_url }}/assets/js/app.js"></script>
+{% endblock %}
+
+{% block contents %}
+<!-- Main navbar -->
+<div class="navbar navbar-expand-lg navbar-static shadow">
+    <div class="container-fluid">
+        <div class="navbar-brand gap-3">
+            <a href="default_layout.html" class="d-inline-flex align-items-left">
+                <!-- <img src="{{ base_url }}/assets/img/favicon.ico" alt=""> -->
+                <img src="{{ base_url }}/assets/img/favicon.ico" alt="Catalyst" style="height: 30px; width: auto;">
+            </a>
+            <span class="fw-bold fs-5 text-dark">ToolGuard Analytics</span>
+        </div>
+    </div>
+</div>
+<!-- /main navbar -->
+
+<!-- Navigation -->
+<div class="navbar sticky-top shadow">
+    <div class="container-fluid">
+        <div class="flex-fill overflow-auto overflow-lg-visible scrollbar-hidden">
+            <ul class="nav gap-1 flex-nowrap flex-lg-wrap">
+                <li class="nav-item">
+                    <a href="#" class="navbar-nav-link dropdown-toggle rounded" data-bs-toggle="dropdown">
+                        PSET change log
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+<!-- /navigation -->
+
+<!-- Page header -->
+<div class="page-header">
+    <div class="page-header-content d-lg-flex">
+        <div class="d-flex">
+            {% block header %}
+            {{ embed(roots.header) }}
+            {% endblock %}
+        </div>
+    </div>
+</div>
+<!-- /page header -->
+
+
+<!-- Page content -->
+<div class="page-content pt-0">
+    <div class="content-wrapper">
+        <div class="content">
+            <!-- PSET change log Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0 text-center">PSET change log</h5>
+                </div>
+                <div class="dropdown d-inline-flex ms-3">
+                    <a href="#" class="text-body d-inline-flex align-items-center dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="ph-export"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end">
+                        {% block xl_download %}
+                        {{ embed(roots.xl_download) }}
+                        {% endblock %}
+                        {% block csv_download %}
+                        {{ embed(roots.csv_download) }}
+                        {% endblock %}
+                    </div>
+                </div>
+                <div class="card-body pb-0">
+                    {% block PSET_change_log %}
+                    {{ embed(roots.PSET_change_log) }}
+                    {% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

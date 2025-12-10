@@ -1,0 +1,3 @@
+2025-09-11 11:24:18.236 | INFO     | sql:sql_to_df:53 - | tdm_data | Query on database "portal": "SELECT * FROM reporting.get_failure_summary(:prod_date, :shift)"
+2025-09-11 11:24:18.237 | INFO     | sql:sql_to_df:54 - | tdm_data | Params: "{'prod_date': '2025-09-08', 'shift': 1}"
+2025-09-11 11:24:23.485 | INFO     | sql:sql_to_df:67 - | tdm_data | Executed: 0:00:05.248142

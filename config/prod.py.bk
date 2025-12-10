@@ -1,0 +1,4 @@
+_HOST = '18.195.211.48'
+_UID = 'postgres'
+_PWD = 'XZzNSu7qt9ASB9X4'
+_PORT = 5002

@@ -1,0 +1,20 @@
+/* Shimmer animation keyframes */
+@keyframes shimmer {
+    0% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+}
+
+/* Base style for skeleton loaders */
+.skeleton-loader .tabulator-row, .plot-skeleton-loader {
+    background: #f6f7f8;
+    background-image: linear-gradient(to right, #f6f7f8 0%, #edeef1 20%, #f6f7f8 40%, #f6f7f8 100%);
+    background-repeat: no-repeat;
+    background-size: 2000px 100%;
+    animation: shimmer 2.5s infinite linear;
+}
+
+/* Remove text from the skeleton table cells */
+.skeleton-loader .tabulator-cell {
+    color: transparent;
+    user-select: none;
+}

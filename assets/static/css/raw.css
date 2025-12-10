@@ -1,0 +1,33 @@
+a.title {
+    font-size: 1.25rem;
+    line-height: 1.5rem;
+    font-weight: bolder;
+}
+div.bk.bk-input-group {
+    padding-bottom: 6px;
+}
+label.bk {
+  font-weight: bold;
+}
+.nav-link {
+    width: 100%;
+    min-font-size: 10pt;
+    font-size: 10pt;
+}
+.nav-item {
+    width: 100%;
+    min-font-size: 10pt;
+    font-size: 10pt;
+}
+table {
+    width: 100%;
+    border-style: none none solid none;
+    border-width: 0 0 0.5 0;
+}
+.pn-wrapper {
+    background: #e3e9f4;
+}
+.bk.accordion .bk.card-header-row.active {
+    background-color: #a6adbb;
+    background: #a6adbb;
+}
