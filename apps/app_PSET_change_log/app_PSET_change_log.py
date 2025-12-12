@@ -115,9 +115,9 @@ def PSET_change_log_page():
     #---------------------
     #Insert section setup
     insert_button = pn.widgets.Button(name="Insert ", button_type="primary",width=50)
-
-    Station_list = backend.get_station_list()
-
+    
+    Station_insert_list = backend.get_station_list()
+    del Station_insert_list['All station']
     Controller_ID_input = pn.widgets.TextInput(placeholder="Enter ControllerID", width=250)
     PSET_input = pn.widgets.TextInput(placeholder="Enter PSET", width=250)
     
@@ -128,7 +128,7 @@ def PSET_change_log_page():
         placeholder='Enter Model',
         width=250,
     )
-    Station_input = pn.widgets.Select(groups=Station_list,width=250)
+    Station_input = pn.widgets.Select(groups=Station_insert_list,width=250)
 
     Name_input = pn.widgets.TextInput(placeholder="Enter User name",width=300)
     Note_input = pn.widgets.TextAreaInput(name="Note :", height=150)
@@ -168,7 +168,8 @@ def PSET_change_log_page():
 
     #---------------------
     # Time check box
-    Station_filter = pn.widgets.Select(name='Select station', groups=Station_list, visible=False, width=250)
+    Station_filter_list = backend.get_station_list()
+    Station_filter = pn.widgets.Select(name='Select station', groups=Station_filter_list, visible=False, width=250)
     date_range_picker = pn.widgets.DateRangePicker(name='Select date range',visible=False,width=300)
     Refresh_while_acquirin_Checkbox = pn.widgets.Checkbox(name="Refresh while acquiring data", value=False)
     Current_Week_Checkbox = pn.widgets.Checkbox(name="Current Week", value=True)
@@ -203,24 +204,37 @@ def PSET_change_log_page():
     btn_cancel_warning.on_click(cancel_warning_click)
 
     def on_all_time_change(event):
-        if All_Time_Warning_Checkbox.value:
+        if event.new:
             Current_Week_Checkbox.value = False
             Previous_Week_Checkbox.value = False
-        
+        update_filter_visibility()
+
     All_Time_Warning_Checkbox.param.watch(on_all_time_change, "value")
 
+    def on_week_change(event):
+        if event.new:  # ถ้าติ๊ก Current Week หรือ Previous Week
+            All_Time_Warning_Checkbox.value = False
+        update_filter_visibility()
 
-    def show_filter(event):
-        if not Current_Week_Checkbox.value and not Previous_Week_Checkbox.value:
-            Station_filter.visible = True
-            date_range_picker.visible = True
-        else:
+    Current_Week_Checkbox.param.watch(on_week_change, "value")
+    Previous_Week_Checkbox.param.watch(on_week_change, "value")
+
+    def update_filter_visibility():
+        if (All_Time_Warning_Checkbox.value or
+            Current_Week_Checkbox.value or
+            Previous_Week_Checkbox.value):
             Station_filter.visible = False
             date_range_picker.visible = False
-            
-    Current_Week_Checkbox.param.watch(show_filter, "value")
-    Previous_Week_Checkbox.param.watch(show_filter, "value")
-    All_Time_Warning_Checkbox.param.watch(show_filter, "value")
+        else:
+            Station_filter.visible = True
+            date_range_picker.visible = True
+
+    def on_any_change(event):
+        update_filter_visibility()
+
+    All_Time_Warning_Checkbox.param.watch(on_any_change, "value")
+    Current_Week_Checkbox.param.watch(on_any_change, "value")
+    Previous_Week_Checkbox.param.watch(on_any_change, "value")
 
     #---------------------
     # Save button in form
@@ -264,7 +278,7 @@ def PSET_change_log_page():
 
     #---------------------
     # Data & Table
-    df_table = pd.DataFrame(columns=["id", "Controller", "station", "model", "pset", "server time", "user", "note", "rev", ])
+    df_table = pd.DataFrame(columns=["Id", "Controller id", "Station", "Model", "Pset", "Server time", "User", "Note", "Rev", ])
     table = pn.widgets.Tabulator(
         df_table,
         buttons={
@@ -324,7 +338,7 @@ def PSET_change_log_page():
         )
 
         rows = backend.fetch_change_log(sql)
-
+        
         if rows is not None and not rows.empty:
             df = pd.DataFrame(rows)
             table.value = df
@@ -401,23 +415,26 @@ def PSET_change_log_page():
     # -----------------------
     # Extract controls
     controls_column = pn.Column(
-        pn.Row(insert_button,Generate_button),
+        Generate_button,
         Station_filter,
         date_range_picker,
         Refresh_while_acquirin_Checkbox,
         Current_Week_Checkbox,
         Previous_Week_Checkbox,
         All_Time_Warning_Checkbox,
-        table,
-        pop_up_edit_form,
         pop_up_insert_form,
         warning_popup,
-        sizing_mode="stretch_width"
+        height = 300
     )
     template.add_panel('PSET_change_log', controls_column)
     template.add_panel('xl_download', btn_table_excel_download)
     template.add_panel('csv_download', btn_table_csv_download)
 
+    PSET_change_log_table = pn.Column(
+        insert_button,
+        table,
+        pop_up_edit_form)
+    template.add_panel('PSET_change_log_table', PSET_change_log_table)
     # pn.state.onload(lambda: pull_change_log(None))
     return template
 

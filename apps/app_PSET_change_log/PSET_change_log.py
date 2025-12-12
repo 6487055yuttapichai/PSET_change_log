@@ -3,7 +3,7 @@ import psycopg2
 from io import BytesIO, StringIO
 import pandas as pd
 from collections import defaultdict
-from config.dev import _HOST, _PORT, _UID, _PWD
+from config.dev import _HOST, _PORT, _UID, _PWD, _DB
 from shared.tdm_logging import logger, log_error, class_method_name
 from shared.sql import PGSQL
 from shared.downloads import excel_format
@@ -18,7 +18,7 @@ class PSET_change_log_Backend:
         conn = psycopg2.connect(
             host=_HOST,
             port=_PORT,
-            dbname='PSET',
+            dbname=_DB,
             user=_UID,
             password=_PWD
         )
@@ -55,11 +55,21 @@ class PSET_change_log_Backend:
 
             # formata date
             try:
-                summary_df["server time"] = pd.to_datetime(summary_df["server time"], errors='coerce')
+                summary_df["server time"] = pd.to_datetime(
+                    summary_df["server time"],
+                    utc=True,
+                    errors="coerce"
+                )
+                summary_df["server time"] = summary_df["server time"].dt.tz_localize(None)
+
+                # format as string
                 summary_df["server time"] = summary_df["server time"].dt.strftime("%Y-%m-%d %H:%M:%S")
             except:
                 pass
             
+            summary_df.columns = [col.capitalize() for col in summary_df.columns]
+            summary_df.columns = [col.replace("_", " ") for col in summary_df.columns]
+
             return summary_df
         
         except Exception as ex:
@@ -244,15 +254,18 @@ class PSET_change_log_Backend:
 
         # station & date
         elif station is not None and date is not None:
-            where_clauses.append(f"c.Station = '{station}'")
+            if station != "All station":
+                where_clauses.append(f"c.Station = '{station}'")
+            
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp <  '{date[1]}'")
         
-        # station & date
+        # station only
         elif station is not None :
-            where_clauses.append(f"c.Station = '{station}'")
+            if station != "All station":
+                where_clauses.append(f"c.Station = '{station}'")
 
-        # station & date
+        # date only
         elif date is not None :
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp <  '{date[1]}'")
@@ -288,7 +301,7 @@ class PSET_change_log_Backend:
 
             # format list to dict, such as {'F1': ['F1-AA 123456', 'F1-BB 741852'], 'G1': ['G1-TT 951753', 'G1-PP 357159']}
             station_list = self._group_by_prefix(station_list)
-
+            
             return station_list
         except Exception as ex:
             logger.error(f"| Exception | {str(ex)}")
@@ -302,7 +315,7 @@ class PSET_change_log_Backend:
 
         # set defalut none to list
         groups[""] = [""]
-        groups[""] = ["All"]
+        groups['All station'] = ["All station"]
 
         for s in station_list:
             prefix = s[:2]   # check the first 2 characters
