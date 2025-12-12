@@ -119,16 +119,13 @@ def PSET_change_log_page():
     Station_list = backend.get_station_list()
 
     Controller_ID_input = pn.widgets.TextInput(placeholder="Enter ControllerID", width=250)
-    # Model_input = pn.widgets.TextInput(placeholder="Enter Model", width=250)
     PSET_input = pn.widgets.TextInput(placeholder="Enter PSET", width=250)
     
     model_list = backend.get_model_list()
 
-
-    # test_list = ['none', '7AA','S2A', 'HZA', 'HPP', '9TA', 'HUA', '9BA', '9YA', 'None']
     Model_input = pn.widgets.AutocompleteInput(
         options=model_list,   
-        placeholder='Enter Model_input',
+        placeholder='Enter Model',
         width=250,
     )
     Station_input = pn.widgets.Select(groups=Station_list,width=250)
@@ -171,8 +168,8 @@ def PSET_change_log_page():
 
     #---------------------
     # Time check box
-    Station_filter = pn.widgets.Select(groups=Station_list, width=250)
-    date_range_picker = pn.widgets.DateRangePicker(name='Select time period',visible=False)
+    Station_filter = pn.widgets.Select(name='Select station', groups=Station_list, visible=False, width=250)
+    date_range_picker = pn.widgets.DateRangePicker(name='Select date range',visible=False,width=300)
     Refresh_while_acquirin_Checkbox = pn.widgets.Checkbox(name="Refresh while acquiring data", value=False)
     Current_Week_Checkbox = pn.widgets.Checkbox(name="Current Week", value=True)
     Previous_Week_Checkbox = pn.widgets.Checkbox(name="Previous Week", value=True)
@@ -186,7 +183,7 @@ def PSET_change_log_page():
     warning_popup = pn.layout.Modal(
         pn.Column(
             pn.pane.Markdown("### ⚠ WARNING"),
-            pn.pane.Markdown("Are you sure to **Generate All Time and Station data** \nIt may take a long time."),
+            pn.pane.Markdown("Are you sure to **Generate All Time and Station data**."),
             pn.Row(btn_Confirm, btn_cancel_warning)
         ),
         open=False,
@@ -194,6 +191,7 @@ def PSET_change_log_page():
         height=200
     )
 
+    
     def confirm_warning_generate_all(event):
         warning_popup.open = False
         run_generate()
@@ -204,14 +202,25 @@ def PSET_change_log_page():
     btn_Confirm.on_click(confirm_warning_generate_all)
     btn_cancel_warning.on_click(cancel_warning_click)
 
-    def show_date_range(event):
+    def on_all_time_change(event):
+        if All_Time_Warning_Checkbox.value:
+            Current_Week_Checkbox.value = False
+            Previous_Week_Checkbox.value = False
+        
+    All_Time_Warning_Checkbox.param.watch(on_all_time_change, "value")
+
+
+    def show_filter(event):
         if not Current_Week_Checkbox.value and not Previous_Week_Checkbox.value:
+            Station_filter.visible = True
             date_range_picker.visible = True
         else:
+            Station_filter.visible = False
             date_range_picker.visible = False
             
-    Current_Week_Checkbox.param.watch(show_date_range, "value")
-    Previous_Week_Checkbox.param.watch(show_date_range, "value")
+    Current_Week_Checkbox.param.watch(show_filter, "value")
+    Previous_Week_Checkbox.param.watch(show_filter, "value")
+    All_Time_Warning_Checkbox.param.watch(show_filter, "value")
 
     #---------------------
     # Save button in form
@@ -255,13 +264,15 @@ def PSET_change_log_page():
 
     #---------------------
     # Data & Table
-    df_table = pd.DataFrame(columns=["id", "Controller", "station", "model", "pset", "server time", "user", "note", "rev", "edit"])
+    df_table = pd.DataFrame(columns=["id", "Controller", "station", "model", "pset", "server time", "user", "note", "rev", ])
     table = pn.widgets.Tabulator(
         df_table,
         buttons={
             "edit": '<button class="btn btn-dark btn-sm">Edit</button>'
         },
         pagination="local",
+        show_index=False,
+        disabled=True,
         page_size=20,
         height=400,
     )
@@ -322,9 +333,9 @@ def PSET_change_log_page():
 
     def Generate_click(event=None):
         # show waring pop up for Genarate All Time data
-        if All_Time_Warning_Checkbox.value:
-            warning_popup.open = True
-            return  
+        # if All_Time_Warning_Checkbox.value:
+        #     warning_popup.open = True
+        #     return  
 
         # normal case {Current Week,Previous Week}
         run_generate()
@@ -390,14 +401,13 @@ def PSET_change_log_page():
     # -----------------------
     # Extract controls
     controls_column = pn.Column(
-        insert_button,
-        pn.Row(pn.pane.Markdown("**Station :**", width=50),Station_filter),
+        pn.Row(insert_button,Generate_button),
+        Station_filter,
         date_range_picker,
         Refresh_while_acquirin_Checkbox,
         Current_Week_Checkbox,
         Previous_Week_Checkbox,
         All_Time_Warning_Checkbox,
-        Generate_button,
         table,
         pop_up_edit_form,
         pop_up_insert_form,

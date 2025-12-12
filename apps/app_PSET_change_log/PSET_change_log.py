@@ -6,6 +6,7 @@ from collections import defaultdict
 from config.dev import _HOST, _PORT, _UID, _PWD
 from shared.tdm_logging import logger, log_error, class_method_name
 from shared.sql import PGSQL
+from shared.downloads import excel_format
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 
@@ -247,6 +248,15 @@ class PSET_change_log_Backend:
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp <  '{date[1]}'")
         
+        # station & date
+        elif station is not None :
+            where_clauses.append(f"c.Station = '{station}'")
+
+        # station & date
+        elif date is not None :
+            where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
+            where_clauses.append(f"(elem.value->>'timestamp')::timestamp <  '{date[1]}'")
+        
         
         # Build where
         where_sql = ""
@@ -292,6 +302,7 @@ class PSET_change_log_Backend:
 
         # set defalut none to list
         groups[""] = [""]
+        groups[""] = ["All"]
 
         for s in station_list:
             prefix = s[:2]   # check the first 2 characters
