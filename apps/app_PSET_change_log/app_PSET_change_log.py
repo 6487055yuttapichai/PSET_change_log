@@ -149,7 +149,7 @@ def PSET_change_log_page():
         ),
         open=False,
         width=1000,
-        height=500
+        height=600
     )
 
 
@@ -169,6 +169,7 @@ def PSET_change_log_page():
     #---------------------
     # Time check box
     Station_filter_list = backend.get_station_list()
+    del Station_filter_list['']
     Station_filter = pn.widgets.Select(name='Select station', groups=Station_filter_list, visible=False, width=250)
     date_range_picker = pn.widgets.DateRangePicker(name='Select date range',visible=False,width=300)
     Refresh_while_acquirin_Checkbox = pn.widgets.Checkbox(name="Refresh while acquiring data", value=False)
@@ -212,7 +213,7 @@ def PSET_change_log_page():
     All_Time_Warning_Checkbox.param.watch(on_all_time_change, "value")
 
     def on_week_change(event):
-        if event.new:  # ถ้าติ๊ก Current Week หรือ Previous Week
+        if event.new:  
             All_Time_Warning_Checkbox.value = False
         update_filter_visibility()
 
@@ -244,13 +245,10 @@ def PSET_change_log_page():
                 pop_up_edit_form.open = False
                 return
 
-            logID = selected_row["row"]["id"]
+            logID = selected_row["row"]["Id"]
 
             # save to Database
             backend.update_Jasondata(logID, edit_note.value,edit_name.value)
-
-            edit_name.value = ""
-            edit_note.value = ""
 
             pop_up_edit_form.open = False
         if type == "insert":
@@ -261,8 +259,16 @@ def PSET_change_log_page():
                 PSET = PSET_input.value, 
                 User = Name_input.value, 
                 Note = Note_input.value)
-                    
+            
+            Controller_ID_input.value = ""
+            Station_input.value = None
+            Model_input.value = ""
+            PSET_input.value = ""
+            Name_input.value = ""
+            Note_input.value = ""
+
             pop_up_insert_form.open = False
+            
 
         # auto refresh
         Generate_click()
@@ -366,33 +372,32 @@ def PSET_change_log_page():
 
             # Index of the selected row
             row_index = event.row
-
+            
             if row_index is None or row_index >= len(df):
                 return 
 
             # selected row data
             row = df.iloc[row_index].to_dict()
-
             # set var for save
             selected_row["row"] = row
             selected_row["index"] = row_index
 
             # add data to popup
             selected_info.object = (
-                f"**Log ID:** {row.get('id', '')}  \n"
-                f"**Controller ID:** {row.get('controller_id', '')}  \n"
-                f"**Station:** {row.get('station', '')}  \n"
-                f"**Model:** {row.get('model', '')}  \n"
-                f"**PSET:** {row.get('pset', '')}  \n"
-                f"**Server Time:** {row.get('server time', '')}"
+                f"**Log ID:** {row.get('Id', '')}  \n"
+                f"**Controller ID:** {row.get('Controller id', '')}  \n"
+                f"**Station:** {row.get('Station', '')}  \n"
+                f"**Model:** {row.get('Model', '')}  \n"
+                f"**PSET:** {row.get('Pset', '')}  \n"
+                f"**Server Time:** {row.get('Server time', '')}"
             )
 
-            if row.get("user", "") is None:
+            if row.get("User", "") is None:
                 edit_name.value = ""
                 edit_note.name = ""
             else:
-                edit_name.value = row.get("user", "")
-                edit_note.value = row.get("note", "")
+                edit_name.value = row.get("User", "")
+                edit_note.value = row.get("Note", "")
 
             pop_up_edit_form.open = True
     
