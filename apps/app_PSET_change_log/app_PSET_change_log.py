@@ -164,11 +164,9 @@ def PSET_change_log_page():
     btn_cancel_insert.on_click(cancel_insert_click)
 
     
-
     #---------------------
     # Time check box
     Station_filter_list = backend.get_station_list()
-    # Station_filter = pn.widgets.Select(name='Select station', groups=Station_filter_list, visible=False, width=250)
     Station_filter  = pn.widgets.MultiChoice(name='Select station', value=[],
         options=Station_filter_list,visible=False, width=500)
     date_range_picker = pn.widgets.DateRangePicker(name='Select date range',visible=False,width=300)
@@ -245,7 +243,7 @@ def PSET_change_log_page():
                 pop_up_edit_form.open = False
                 return
 
-            logID = selected_row["row"]["Id"]
+            logID = selected_row["row"]["Log Id"]
 
             # save to Database
             backend.update_Jasondata(logID, edit_note.value,edit_name.value)
@@ -284,9 +282,7 @@ def PSET_change_log_page():
 
     #---------------------
     # Data & Table
-    df_table = pd.DataFrame(columns=["Id", "Controller id", "Station", "Model", "Pset", "Server time", "User", "Note", "Rev", ])
     table = pn.widgets.Tabulator(
-        df_table,
         buttons={
             "edit": '<button class="btn btn-dark btn-sm">Edit</button>'
         },
@@ -349,7 +345,7 @@ def PSET_change_log_page():
             df = pd.DataFrame(rows)
             table.value = df
         else:
-            table.value = df_table
+            table.value = pd.DataFrame(columns=["Id", "Controller id", "Station", "Model", "Pset", "Server time", "User", "Note", "Rev"])
 
     def Generate_click(event=None):
         # show waring pop up for Genarate All Time data

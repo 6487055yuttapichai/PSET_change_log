@@ -6,9 +6,11 @@ from collections import defaultdict
 from config.dev import _HOST, _PORT, _UID, _PWD, _DB
 from shared.tdm_logging import logger, log_error, class_method_name
 from shared.sql import PGSQL
-from shared.downloads import excel_format
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+
 
 
 pgsql = PGSQL()
@@ -78,66 +80,77 @@ class PSET_change_log_Backend:
             return summary_df
 
     def update_Jasondata(self, Id, Note, User):
-        conn = self._pg_connect()
-        cursor = conn.cursor()
+        query = """
+        UPDATE dbo.change_log
+        SET jsondata = jsondata || to_jsonb(
+            json_build_object(
+                'rev', (
+                    SELECT COALESCE(MAX((item->>'rev')::int), 0)
+                    FROM jsonb_array_elements(jsondata) AS item
+                ) + 1,
+                'note', :note,
+                'user', :user,
+                'timestamp', CURRENT_TIMESTAMP
+            )
+        )
+        WHERE Id = :id
+        """
+
+        params = {
+            "note": Note,
+            "user": User,
+            "id": Id
+        }
+
+        pgsql = PGSQL()
+        engine = create_engine(pgsql.connect_url(db=''), echo=False)
+
         try:
-            cursor.execute(
-                """
-                UPDATE dbo.change_log
-                SET 
-                    jsondata = jsondata || to_jsonb(
-                    json_build_object(
-                        'rev', (
-                            SELECT COALESCE(MAX((item->>'rev')::int), 0)
-                            FROM jsonb_array_elements(jsondata) AS item
-                        ) + 1,
-                        'note', %s,
-                        'user', %s,
+            with engine.begin() as conn:
+                conn.execute(text(query), params)
+        except SQLAlchemyError as e:
+            logger.error(f"| Error updating item {Id}: {e}")
+
+
+    def insert_to_change_log(self, Controller_ID, Station, Model, PSET, User, Note):
+        query = """
+        INSERT INTO dbo.change_log
+            (Controller_Id, Station, Model, PSET, JsonData)
+        VALUES
+            (
+                :controller_id,
+                :station,
+                :model,
+                :pset,
+                jsonb_build_array(
+                    jsonb_build_object(
+                        'rev', 0,
+                        'user', :user,
+                        'note', :note,
                         'timestamp', CURRENT_TIMESTAMP
                     )
                 )
-                WHERE Id = %s;
-                """,
-                (Note,User,Id)
-            )
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"| Error updating item {Id}: {e}")
-        finally:
-            cursor.close()
-            conn.close()
+            );
+        """
 
-    def insert_to_change_log(self, Controller_ID, Station, Model, PSET, User, Note):
-        conn = self._pg_connect()
-        cursor = conn.cursor()
+        params = {
+            "controller_id": Controller_ID,
+            "station": Station,
+            "model": Model,
+            "pset": PSET,
+            "user": User,
+            "note": Note
+        }
+
+        pgsql = PGSQL()
+        engine = create_engine(pgsql.connect_url(db=None), echo=False)
+
         try:
-            cursor.execute(
-                """
-                INSERT INTO dbo.change_log
-                    (Controller_Id, Station, Model, PSET, JsonData)
-                VALUES
-                    (
-                        %s, %s, %s, %s,
-                        jsonb_build_array(
-                            jsonb_build_object(
-                                'rev', 0,
-                                'user', %s,
-                                'note', %s,
-                                'timestamp', CURRENT_TIMESTAMP
-                            )
-                        )
-                    );
-                """,
-                (Controller_ID, Station, Model, PSET, User, Note)
-            )
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"| Error updating item {Controller_ID}: {e}")
-        finally:
-            cursor.close()
-            conn.close()
+            with engine.begin() as conn:
+                conn.execute(text(query), params)
+        except SQLAlchemyError as e:
+            logger.error(f"| Error inserting item {Controller_ID}: {e}")
+
 
     def csv_download_callback(self,df):
         try:
