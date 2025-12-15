@@ -69,6 +69,7 @@ class PSET_change_log_Backend:
             
             summary_df.columns = [col.capitalize() for col in summary_df.columns]
             summary_df.columns = [col.replace("_", " ") for col in summary_df.columns]
+            summary_df.rename(columns={'Id': 'Log Id'}, inplace=True)
 
             return summary_df
         
@@ -254,16 +255,18 @@ class PSET_change_log_Backend:
 
         # station & date
         elif station is not None and date is not None:
-            if station != "All station":
-                where_clauses.append(f"c.Station = '{station}'")
+            if "All Station" not in station:
+                stations = ", ".join(f"'{s}'" for s in station)
+                where_clauses.append(f"c.Station IN ({stations})")
             
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp <  '{date[1]}'")
         
         # station only
         elif station is not None :
-            if station != "All station":
-                where_clauses.append(f"c.Station = '{station}'")
+            if "All Station" not in station:
+                stations = ", ".join(f"'{s}'" for s in station)
+                where_clauses.append(f"c.Station IN ({stations})")
 
         # date only
         elif date is not None :
@@ -297,11 +300,8 @@ class PSET_change_log_Backend:
             rows = cursor.fetchall()  
 
             # save result as a list
-            station_list = [row[0] for row in rows]
-
-            # format list to dict, such as {'F1': ['F1-AA 123456', 'F1-BB 741852'], 'G1': ['G1-TT 951753', 'G1-PP 357159']}
-            station_list = self._group_by_prefix(station_list)
-            
+            station_list = sorted(row[0] for row in rows)
+            station_list.insert(0, "All Station")
             return station_list
         except Exception as ex:
             logger.error(f"| Exception | {str(ex)}")
@@ -310,12 +310,14 @@ class PSET_change_log_Backend:
             cursor.close()
             conn.close()
 
-    def _group_by_prefix(self, station_list):
+    def get_station_dict(self):
+        # EX. output {'F1': ['F1-AA 123456', 'F1-BB 741852'], 'G1': ['G1-TT 951753', 'G1-PP 357159']}
+        station_list = self.get_station_list()
+        station_list.remove("All Station")
         groups = defaultdict(list)
 
         # set defalut none to list
         groups[""] = [""]
-        groups['All station'] = ["All station"]
 
         for s in station_list:
             prefix = s[:2]   # check the first 2 characters

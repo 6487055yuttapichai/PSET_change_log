@@ -114,10 +114,9 @@ def PSET_change_log_page():
 
     #---------------------
     #Insert section setup
-    insert_button = pn.widgets.Button(name="Insert ", button_type="primary",width=50)
+    insert_button = pn.widgets.Button(name="New Log ", button_type="success",width=50)
     
-    Station_insert_list = backend.get_station_list()
-    del Station_insert_list['All station']
+    Station_insert_list = backend.get_station_dict()
     Controller_ID_input = pn.widgets.TextInput(placeholder="Enter ControllerID", width=250)
     PSET_input = pn.widgets.TextInput(placeholder="Enter PSET", width=250)
     
@@ -169,15 +168,16 @@ def PSET_change_log_page():
     #---------------------
     # Time check box
     Station_filter_list = backend.get_station_list()
-    del Station_filter_list['']
-    Station_filter = pn.widgets.Select(name='Select station', groups=Station_filter_list, visible=False, width=250)
+    # Station_filter = pn.widgets.Select(name='Select station', groups=Station_filter_list, visible=False, width=250)
+    Station_filter  = pn.widgets.MultiChoice(name='Select station', value=[],
+        options=Station_filter_list,visible=False, width=500)
     date_range_picker = pn.widgets.DateRangePicker(name='Select date range',visible=False,width=300)
     Refresh_while_acquirin_Checkbox = pn.widgets.Checkbox(name="Refresh while acquiring data", value=False)
     Current_Week_Checkbox = pn.widgets.Checkbox(name="Current Week", value=True)
     Previous_Week_Checkbox = pn.widgets.Checkbox(name="Previous Week", value=True)
     All_Time_Warning_Checkbox = pn.widgets.Checkbox(name="All Time and Station (Warning)", value=False)
     
-    Generate_button = pn.widgets.Button(name="Generate ", button_type="primary",width=100)
+    Generate_button = pn.widgets.Button(name="Refresh ", button_type="primary",width=100)
 
     btn_Confirm = pn.widgets.Button(name="Confirm", button_type="danger")
     btn_cancel_warning = pn.widgets.Button(name="Cancel")

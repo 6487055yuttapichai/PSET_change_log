@@ -16,7 +16,7 @@ pn.serve(ROUTES,
          admin=False,
          log_level="info",
          num_threads=4,
-         ico_path=Path(__file__).parent / "assets" / "img" / "favicon.ico",
+         ico_path=Path(__file__).parent / "assets" / "img" / "catalyst-logo.png",
          static_dirs={'assets': Path(__file__).parent / "assets"},
          reuse_sessions=True,
          global_loading_spinner=False)

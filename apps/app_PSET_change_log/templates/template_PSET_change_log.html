@@ -1,8 +1,9 @@
 {% extends base %}
 
+{% block title %}PSET Change Log{% endblock %}
+
 {% block preamble %}
 {{ super() }}
-
 <!-- Global stylesheets -->
 <link href="{{ base_url }}/assets/fonts/inter/inter.css" rel="stylesheet" type="text/css">
 <link href="{{ base_url }}/assets/icons/phosphor/styles.min.css" rel="stylesheet" type="text/css">
@@ -31,21 +32,7 @@
 </div> -->
 <!-- /main navbar -->
 
-<!-- Navigation -->
-<div class="navbar sticky-top shadow">
-    <div class="container-fluid">
-        <div class="flex-fill overflow-auto overflow-lg-visible scrollbar-hidden">
-            <ul class="nav gap-1 flex-nowrap flex-lg-wrap">
-                <li class="nav-item">
-                    <a href="#" class="navbar-nav-link dropdown-toggle rounded" data-bs-toggle="dropdown">
-                        PSET change log
-                    </a>
-                </li>
-            </ul>
-        </div>
-    </div>
-</div>
-<!-- /navigation -->
+
 
 <!-- Page header -->
 <div class="page-header">
@@ -68,7 +55,7 @@
             <div class="card">
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 text-center">PSET change log</h5>
+                        <h5 class="mb-0 text-center">Filter Options</h5>
                     </div>
                     
                 </div>
@@ -85,7 +72,7 @@
 
                     <!-- Title centered via flex-grow -->
                     <div class="flex-grow-1 d-flex justify-content-center">
-                        <h5 class="mb-0 text-center">table data</h5>
+                        <h5 class="mb-0 text-center">PSET Change Log Data</h5>
                     </div>
 
                     <!-- Dropdown positioned on top-right -->
