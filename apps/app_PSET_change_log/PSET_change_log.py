@@ -53,46 +53,46 @@ class PSET_change_log_Backend:
         # ======================
         # INSERT SECTION
         # ======================
-        self.insert_button = pn.widgets.Button(name="New Log ", button_type="success", width=50)
+        # self.insert_button = pn.widgets.Button(name="New Log ", button_type="success", width=50)
 
-        self.Controller_ID_input = pn.widgets.TextInput(placeholder="Enter ControllerID", width=250)
-        self.PSET_input = pn.widgets.TextInput(placeholder="Enter PSET", width=250)
+        # self.Controller_ID_input = pn.widgets.TextInput(placeholder="Enter ControllerID", width=250)
+        # self.PSET_input = pn.widgets.TextInput(placeholder="Enter PSET", width=250)
 
-        self.Model_input = pn.widgets.AutocompleteInput(
-            options=self.get_model_list(),
-            placeholder='Enter Model',
-            width=250,
-        )
+        # self.Model_input = pn.widgets.AutocompleteInput(
+        #     options=self.get_model_list(),
+        #     placeholder='Enter Model',
+        #     width=250,
+        # )
 
-        self.Station_input = pn.widgets.Select(
-            groups=self.get_station_dict(),
-            width=250
-        )
+        # self.Station_input = pn.widgets.Select(
+        #     groups=self.get_station_dict(),
+        #     width=250
+        # )
 
-        self.Name_input = pn.widgets.TextInput(placeholder="Enter User name", width=300)
-        self.Note_input = pn.widgets.TextAreaInput(name="Note :", height=150)
+        # self.Name_input = pn.widgets.TextInput(placeholder="Enter User name", width=300)
+        # self.Note_input = pn.widgets.TextAreaInput(name="Note :", height=150)
 
-        self.btn_save_insert = pn.widgets.Button(name="Save", button_type="primary")
-        self.btn_cancel_insert = pn.widgets.Button(name="Cancel")
+        # self.btn_save_insert = pn.widgets.Button(name="Save", button_type="primary")
+        # self.btn_cancel_insert = pn.widgets.Button(name="Cancel")
 
-        self.pop_up_insert_form = pn.layout.Modal(
-            pn.Column(
-                pn.pane.Markdown("### insert form"),
-                pn.Row(pn.pane.Markdown("**Controller ID :**", width=80), self.Controller_ID_input),
-                pn.Row(pn.pane.Markdown("**Station :**", width=80), self.Station_input),
-                pn.Row(pn.pane.Markdown("**Model :**", width=80), self.Model_input),
-                pn.Row(pn.pane.Markdown("**PSET :**", width=80), self.PSET_input),
-                pn.Row(pn.pane.Markdown("**User :**", width=80), self.Name_input),
-                self.Note_input,
-                pn.Row(self.btn_save_insert, self.btn_cancel_insert)
-            ),
-            open=False,
-            width=1000,
-            height=600
-        )
+        # self.pop_up_insert_form = pn.layout.Modal(
+        #     pn.Column(
+        #         pn.pane.Markdown("### insert form"),
+        #         pn.Row(pn.pane.Markdown("**Controller ID :**", width=80), self.Controller_ID_input),
+        #         pn.Row(pn.pane.Markdown("**Station :**", width=80), self.Station_input),
+        #         pn.Row(pn.pane.Markdown("**Model :**", width=80), self.Model_input),
+        #         pn.Row(pn.pane.Markdown("**PSET :**", width=80), self.PSET_input),
+        #         pn.Row(pn.pane.Markdown("**User :**", width=80), self.Name_input),
+        #         self.Note_input,
+        #         pn.Row(self.btn_save_insert, self.btn_cancel_insert)
+        #     ),
+        #     open=False,
+        #     width=1000,
+        #     height=600
+        # )
 
-        self.insert_button.on_click(lambda e: setattr(self.pop_up_insert_form, "open", True))
-        self.btn_cancel_insert.on_click(lambda e: setattr(self.pop_up_insert_form, "open", False))
+        # self.insert_button.on_click(lambda e: setattr(self.pop_up_insert_form, "open", True))
+        # self.btn_cancel_insert.on_click(lambda e: setattr(self.pop_up_insert_form, "open", False))
 
         # ======================
         # FILTER SECTION
@@ -163,7 +163,7 @@ class PSET_change_log_Backend:
         # BIND EVENTS
         # ======================
         self.Refresh_button.on_click(self.Refresh_click)
-        self.btn_save_insert.on_click(lambda e: self.save_click("insert"))
+        # self.btn_save_insert.on_click(lambda e: self.save_click("insert"))
         self.btn_save_edit.on_click(lambda e: self.save_click("update"))
         self.All_Time_Warning_Checkbox.param.watch(
             self.on_all_time_change, "value"
@@ -214,16 +214,16 @@ class PSET_change_log_Backend:
             )
             self.pop_up_edit_form.open = False
 
-        if type == "insert":
-            self.insert_to_change_log(
-                Controller_ID=self.Controller_ID_input.value,
-                Station=self.Station_input.value,
-                Model=self.Model_input.value,
-                PSET=self.PSET_input.value,
-                User=self.Name_input.value,
-                Note=self.Note_input.value
-            )
-            self.pop_up_insert_form.open = False
+        # if type == "insert":
+        #     self.insert_to_change_log(
+        #         Controller_ID=self.Controller_ID_input.value,
+        #         Station=self.Station_input.value,
+        #         Model=self.Model_input.value,
+        #         PSET=self.PSET_input.value,
+        #         User=self.Name_input.value,
+        #         Note=self.Note_input.value
+        #     )
+        #     self.pop_up_insert_form.open = False
 
         self.Refresh_click()
 
@@ -358,43 +358,43 @@ class PSET_change_log_Backend:
         except SQLAlchemyError as e:
             logger.error(f"| Error updating item {Id}: {e}")
 
-    def insert_to_change_log(self, Controller_ID, Station, Model, PSET, User, Note):
-        query = """
-        INSERT INTO dbo.change_log
-            (Controller_Id, Station, Model, PSET, JsonData)
-        VALUES
-            (
-                :controller_id,
-                :station,
-                :model,
-                :pset,
-                jsonb_build_array(
-                    jsonb_build_object(
-                        'rev', 0,
-                        'user', :user,
-                        'note', :note,
-                        'timestamp', CURRENT_TIMESTAMP
-                    )
-                )
-            );
-        """
+    # def insert_to_change_log(self, Controller_ID, Station, Model, PSET, User, Note):
+    #     query = """
+    #     INSERT INTO dbo.change_log
+    #         (Controller_Id, Station, Model, PSET, JsonData)
+    #     VALUES
+    #         (
+    #             :controller_id,
+    #             :station,
+    #             :model,
+    #             :pset,
+    #             jsonb_build_array(
+    #                 jsonb_build_object(
+    #                     'rev', 0,
+    #                     'user', :user,
+    #                     'note', :note,
+    #                     'timestamp', CURRENT_TIMESTAMP
+    #                 )
+    #             )
+    #         );
+    #     """
 
-        params = {
-            "controller_id": Controller_ID,
-            "station": Station,
-            "model": Model,
-            "pset": PSET,
-            "user": User,
-            "note": Note
-        }
+    #     params = {
+    #         "controller_id": Controller_ID,
+    #         "station": Station,
+    #         "model": Model,
+    #         "pset": PSET,
+    #         "user": User,
+    #         "note": Note
+    #     }
 
-        engine = create_engine(pgsql.connect_url(db=None), echo=False)
+    #     engine = create_engine(pgsql.connect_url(db=None), echo=False)
 
-        try:
-            with engine.begin() as conn:
-                conn.execute(text(query), params)
-        except SQLAlchemyError as e:
-            logger.error(f"| Error inserting item {Controller_ID}: {e}")
+    #     try:
+    #         with engine.begin() as conn:
+    #             conn.execute(text(query), params)
+    #     except SQLAlchemyError as e:
+    #         logger.error(f"| Error inserting item {Controller_ID}: {e}")
 
     def csv_download_callback(self,df):
         try:

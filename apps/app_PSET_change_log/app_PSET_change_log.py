@@ -106,15 +106,16 @@ def PSET_change_log_page():
         backend.Current_Week_Checkbox,
         backend.Previous_Week_Checkbox,
         backend.All_Time_Warning_Checkbox,
-        backend.pop_up_insert_form,
-        height=300
+        # backend.pop_up_insert_form,
+        # height=300
+        sizing_mode='stretch_width'
     )
     template.add_panel('PSET_change_log', controls_column)
     template.add_panel('xl_download', backend.btn_table_excel_download)
     template.add_panel('csv_download', backend.btn_table_csv_download)
 
     PSET_change_log_table = pn.Column(
-        backend.insert_button,
+        # backend.insert_button,
         backend.table,
         backend.pop_up_edit_form)
     template.add_panel('PSET_change_log_table', PSET_change_log_table)
