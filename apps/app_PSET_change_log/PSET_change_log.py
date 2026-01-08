@@ -320,6 +320,7 @@ class PSET_change_log_Backend:
             summary_df.columns = [col.capitalize() for col in summary_df.columns]
             summary_df.columns = [col.replace("_", " ") for col in summary_df.columns]
             summary_df.rename(columns={'Id': 'Log Id'}, inplace=True)
+            summary_df = summary_df.drop(columns=['Model'])
 
             return summary_df
         
