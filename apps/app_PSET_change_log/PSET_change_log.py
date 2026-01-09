@@ -29,11 +29,11 @@ class PSET_change_log_Backend:
         # ======================
         self.selected_info = pn.pane.Markdown("", sizing_mode="stretch_width")
 
-        self.edit_name = pn.widgets.TextInput(name="User :", placeholder="Enter User name")
-        self.edit_note = pn.widgets.TextAreaInput(name="Note :   ", height=150)
+        self.edit_name = pn.widgets.TextInput(name="User :", placeholder="Enter User name", width=360)
+        self.edit_note = pn.widgets.TextAreaInput(name="Note :   ", height=150, width=360)
 
-        self.btn_save_edit = pn.widgets.Button(name="Save", button_type="primary")
-        self.btn_cancel_edit = pn.widgets.Button(name="Cancel")
+        self.btn_save_edit = pn.widgets.Button(name="Save", button_type="primary", width=170)
+        self.btn_cancel_edit = pn.widgets.Button(name="Cancel", width=170)
 
         self.pop_up_edit_form = pn.layout.Modal(
             pn.Column(
@@ -44,55 +44,11 @@ class PSET_change_log_Backend:
                 pn.Row(self.btn_save_edit, self.btn_cancel_edit)
             ),
             open=False,
-            width=1000,
+            width=400,
             height=500
         )
 
         self.btn_cancel_edit.on_click(lambda e: setattr(self.pop_up_edit_form, "open", False))
-
-        # ======================
-        # INSERT SECTION
-        # ======================
-        # self.insert_button = pn.widgets.Button(name="New Log ", button_type="success", width=50)
-
-        # self.Controller_ID_input = pn.widgets.TextInput(placeholder="Enter ControllerID", width=250)
-        # self.PSET_input = pn.widgets.TextInput(placeholder="Enter PSET", width=250)
-
-        # self.Model_input = pn.widgets.AutocompleteInput(
-        #     options=self.get_model_list(),
-        #     placeholder='Enter Model',
-        #     width=250,
-        # )
-
-        # self.Station_input = pn.widgets.Select(
-        #     groups=self.get_station_dict(),
-        #     width=250
-        # )
-
-        # self.Name_input = pn.widgets.TextInput(placeholder="Enter User name", width=300)
-        # self.Note_input = pn.widgets.TextAreaInput(name="Note :", height=150)
-
-        # self.btn_save_insert = pn.widgets.Button(name="Save", button_type="primary")
-        # self.btn_cancel_insert = pn.widgets.Button(name="Cancel")
-
-        # self.pop_up_insert_form = pn.layout.Modal(
-        #     pn.Column(
-        #         pn.pane.Markdown("### insert form"),
-        #         pn.Row(pn.pane.Markdown("**Controller ID :**", width=80), self.Controller_ID_input),
-        #         pn.Row(pn.pane.Markdown("**Station :**", width=80), self.Station_input),
-        #         pn.Row(pn.pane.Markdown("**Model :**", width=80), self.Model_input),
-        #         pn.Row(pn.pane.Markdown("**PSET :**", width=80), self.PSET_input),
-        #         pn.Row(pn.pane.Markdown("**User :**", width=80), self.Name_input),
-        #         self.Note_input,
-        #         pn.Row(self.btn_save_insert, self.btn_cancel_insert)
-        #     ),
-        #     open=False,
-        #     width=1000,
-        #     height=600
-        # )
-
-        # self.insert_button.on_click(lambda e: setattr(self.pop_up_insert_form, "open", True))
-        # self.btn_cancel_insert.on_click(lambda e: setattr(self.pop_up_insert_form, "open", False))
 
         # ======================
         # FILTER SECTION
@@ -130,7 +86,10 @@ class PSET_change_log_Backend:
             show_index=False,
             disabled=True,
             page_size=20,
-            height=400,
+            height=800,
+            theme = 'bootstrap5',
+            hidden_columns=['Timelastchange'],
+            layout="fit_columns"
         )
 
         self.table.on_click(self.on_table_edit_click)
@@ -234,13 +193,12 @@ class PSET_change_log_Backend:
         df = pd.DataFrame(self.table.value)
         row = df.iloc[event.row].to_dict()
         self.selected_row["row"] = row
-
         self.selected_info.object = (
-            f"**Log ID:** {row.get('Id')}  \n"
+            f"**Log ID:** {row.get('Log Id')}  \n"
             f"**Controller ID:** {row.get('Controller id')}  \n"
             f"**Station:** {row.get('Station')}  \n"
-            f"**Model:** {row.get('Model')}  \n"
             f"**PSET:** {row.get('Pset')}  \n"
+            f"**Last Changed Time:** {row.get('Timelastchange')}  \n"
             f"**Server Time:** {row.get('Server time')}"
         )
 
@@ -288,7 +246,8 @@ class PSET_change_log_Backend:
                         "server time": None,
                         "user": None,
                         "note": None,
-                        "rev": None
+                        "rev": None,
+                        "timeLastChange": None
                     })
                     continue
                 
@@ -296,7 +255,8 @@ class PSET_change_log_Backend:
                     "server time": raw_json.get("timestamp"),
                     "user": raw_json.get("user"),
                     "note": raw_json.get("note"),
-                    "rev": raw_json.get("rev")
+                    "rev": raw_json.get("rev"),
+                    "timeLastChange": raw_json.get("timeLastChange")
                 })
 
             latest_df = pd.DataFrame(latest_revs)
@@ -320,7 +280,8 @@ class PSET_change_log_Backend:
             summary_df.columns = [col.capitalize() for col in summary_df.columns]
             summary_df.columns = [col.replace("_", " ") for col in summary_df.columns]
             summary_df.rename(columns={'Id': 'Log Id'}, inplace=True)
-            summary_df = summary_df.drop(columns=['Model'])
+
+            summary_df = summary_df[summary_df["Rev"] != 0] # select only rev > 0
 
             return summary_df
         
@@ -358,44 +319,6 @@ class PSET_change_log_Backend:
                 conn.execute(text(query), params)
         except SQLAlchemyError as e:
             logger.error(f"| Error updating item {Id}: {e}")
-
-    # def insert_to_change_log(self, Controller_ID, Station, Model, PSET, User, Note):
-    #     query = """
-    #     INSERT INTO dbo.change_log
-    #         (Controller_Id, Station, Model, PSET, JsonData)
-    #     VALUES
-    #         (
-    #             :controller_id,
-    #             :station,
-    #             :model,
-    #             :pset,
-    #             jsonb_build_array(
-    #                 jsonb_build_object(
-    #                     'rev', 0,
-    #                     'user', :user,
-    #                     'note', :note,
-    #                     'timestamp', CURRENT_TIMESTAMP
-    #                 )
-    #             )
-    #         );
-    #     """
-
-    #     params = {
-    #         "controller_id": Controller_ID,
-    #         "station": Station,
-    #         "model": Model,
-    #         "pset": PSET,
-    #         "user": User,
-    #         "note": Note
-    #     }
-
-    #     engine = create_engine(pgsql.connect_url(db=None), echo=False)
-
-    #     try:
-    #         with engine.begin() as conn:
-    #             conn.execute(text(query), params)
-    #     except SQLAlchemyError as e:
-    #         logger.error(f"| Error inserting item {Controller_ID}: {e}")
 
     def csv_download_callback(self,df):
         try:
@@ -435,7 +358,6 @@ class PSET_change_log_Backend:
                 c.Id,
                 c.Controller_Id,
                 c.Station,
-                c.Model,
                 c.PSET,
                 elem.value AS jsonitem
             FROM dbo.change_log c
