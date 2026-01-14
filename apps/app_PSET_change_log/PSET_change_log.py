@@ -57,7 +57,15 @@ class PSET_change_log_Backend:
         # ======================
         self.rev_compare_body = pn.Column(sizing_mode="stretch_both")
 
-        self.btn_Restore_Rev = pn.widgets.Button(name="Restore", button_type="primary", width=170)
+        # self.btn_download_Rev = pn.widgets.Button(name="Download all revision", button_type="primary", width=170)
+        self.btn_download_Rev = pn.widgets.FileDownload(
+            callback=self.Download_Rev_click,
+            auto=True,
+            label="Download all revision",
+            filename="all_revision.csv",
+            button_type="primary",
+            width=170
+        )
         self.btn_cancel_Rev = pn.widgets.Button(name="Cancel", width=170)
 
         self.pop_up_Rev = pn.layout.Modal(
@@ -89,7 +97,7 @@ class PSET_change_log_Backend:
         self.Current_Week_Checkbox = pn.widgets.Checkbox(name="Current Week", value=True)
         self.Previous_Week_Checkbox = pn.widgets.Checkbox(name="Previous Week", value=True)
         self.All_Time_Warning_Checkbox = pn.widgets.Checkbox(
-            name="All Time and Station (Warning)", value=False
+            name="All Time and Station", value=False
         )
 
         self.Refresh_button = pn.widgets.Button(name="Refresh ", button_type="primary", width=100)
@@ -108,9 +116,15 @@ class PSET_change_log_Backend:
             page_size=20,
             height=800,
             theme = 'bootstrap5',
-            layout="fit_columns",
-            hidden_columns=['Timelastchange']
+            layout="fit_columns"
         )
+
+        self.table.text_align = {
+            "Log Id": "center",
+            "Pset": "center",
+            "Rev": "center",
+        }
+
 
         self.table.on_click(self.on_table_edit_click)
 
@@ -144,7 +158,6 @@ class PSET_change_log_Backend:
         self.Refresh_button.on_click(self.Refresh_click)
         # self.btn_save_insert.on_click(lambda e: self.save_click("insert"))
         self.btn_save_edit.on_click(lambda e: self.save_click("update"))
-        self.btn_Restore_Rev.on_click(self.restore_click)
         self.All_Time_Warning_Checkbox.param.watch(
             self.on_all_time_change, "value"
         )
@@ -197,14 +210,21 @@ class PSET_change_log_Backend:
 
         self.Refresh_click()
 
-    def restore_click(self, event):
-        print(self.selected_row)
-        if self.selected_row.get("row"):
-            row = self.selected_row["row"]
-            self.restore(row["Log Id"])
-            self.pop_up_Rev.open = False
+    def Download_Rev_click(self):
+        if not self.selected_row.get("row"):
+            return None
 
-        self.Refresh_click()
+        row = self.selected_row["row"]
+        id = row["Log Id"]
+
+        all_rev = self.fetch_detail_rec_all_rev(id)
+        if all_rev is None or all_rev.empty:
+            return None
+        
+        csv_data = all_rev.to_csv(index=False)
+
+        self.pop_up_Rev.open = False
+        return BytesIO(csv_data.encode("utf-8"))
 
     def on_table_edit_click(self, event):
         df = pd.DataFrame(self.table.value)
@@ -268,7 +288,7 @@ class PSET_change_log_Backend:
                     "user": raw_json.get("user"),
                     "note": raw_json.get("note"),
                     "rev": raw_json.get("rev"),
-                    "timeLastChange": raw_json.get("timeLastChange")
+                    "Last Time Change": raw_json.get("timeLastChange")
                 })
 
             latest_df = pd.DataFrame(latest_revs)
@@ -524,93 +544,110 @@ class PSET_change_log_Backend:
         self.edit_note.value = row.get("Note", "") or ""
 
     def compare_rev0(self, id):
-        rev = self.fetch_detail_rec(id)
-        
-        if len(rev) < 2:
-            pn.state.notifications.warning("Have some error with rev")
+        rev = self.fetch_detail_rec_all_rev(id)
+
+        if rev is None or rev.empty:
             return
 
-        rev0 = rev.iloc[0]
-        rev_latest = rev.iloc[1]
+        rev_indexes = list(range(len(rev)))
 
-        changed_colum = self.compare_2_df(rev0, rev_latest)
-        df_right = rev_latest.to_frame(name="Revision latest")
-        df_left = rev0.to_frame(name="Revision 0")
+        self.rev_select = pn.widgets.Select(
+            name="Compare with revision",
+            options=rev_indexes,
+            value=rev_indexes[-1],   # default = latest
+            width=200
+        )
 
-        table_border_style = [
-            {
-                "selector": "th",
-                "props": [
-                    ("border", "1px solid #555"),
-                    ("border-collapse", "collapse")
-                ]
-            },
-            {
-                "selector": "td",
-                "props": [
-                    ("border", "1px solid #555"),
-                    ("border-collapse", "collapse")
-                ]
-            }
-        ]
+        def update_view(selected_index):
+            rev0 = rev.iloc[0]
+            rev_latest = rev.iloc[selected_index]
+
+            changed_colum = self.compare_2_df(rev0, rev_latest)
+
+            df_right = rev_latest.to_frame(name=f"Revision {selected_index}")
+            df_left = rev0.to_frame(name="Revision 0")
+
+            table_border_style = [
+                {"selector": "th", "props": [("border", "1px solid #555")]},
+                {"selector": "td", "props": [("border", "1px solid #555")]}
+            ]
+
+            styled_right = (
+                df_right.style
+                .set_properties(
+                    subset=pd.IndexSlice[changed_colum, :],
+                    **{"background-color": "#6ae1ff", "font-weight": "bold"}
+                )
+                .set_table_styles(table_border_style)
+            )
+
+            styled_left = (
+                df_left.style
+                .set_properties(
+                    subset=pd.IndexSlice[changed_colum, :],
+                    **{"background-color": "#ff6adf", "font-weight": "bold"}
+                )
+                .set_table_styles(table_border_style)
+            )
+
+            pane_left = pn.pane.DataFrame(styled_left, height=430, sizing_mode="stretch_width")
+            pane_right = pn.pane.DataFrame(styled_right, height=430, sizing_mode="stretch_width")
+
+            return pn.Row(
+                pn.Column(pane_left, sizing_mode="stretch_width"),
+                pn.Column(pane_right, sizing_mode="stretch_width"),
+            )
         
-        styled_right = (
-            df_right.style
-            .set_properties(
-                subset=pd.IndexSlice[changed_colum, :],
-                **{
-                    "background-color": "#6ae1ff",
-                    "font-weight": "bold"
-                }
-            )
-            .set_table_styles(table_border_style)
-        )
+        compare_row = update_view(self.rev_select.value)
+        def _on_rev_change(event):
+            self.rev_compare_body[1] = update_view(event.new)
 
-        styled_left = (
-            df_left.style
-            .set_properties(
-                subset=pd.IndexSlice[changed_colum, :],
-                **{
-                    "background-color": "#ff6adf",
-                    "font-weight": "bold"
-                }
-            )
-            .set_table_styles(table_border_style)
-        )
-
-
-        pane_left = pn.pane.DataFrame(
-            styled_left,
-            height=400,
-            sizing_mode="stretch_width"
-        )
-
-        pane_right = pn.pane.DataFrame(
-            styled_right,
-            height=400,
+        self.rev_select.param.watch(_on_rev_change, "value")
+        header = pn.Row(
+            pn.pane.Markdown("## Revision Comparison: Initial vs Latest"),
+            pn.Spacer(width=20),
+            self.rev_select,
             sizing_mode="stretch_width"
         )
 
         self.rev_compare_body[:] = [
-            pn.pane.Markdown("## Revision Comparison: Initial vs Latest"),
-            pn.Row(
-                pn.Column(pane_left, sizing_mode="stretch_width"),
-                pn.Column(pane_right, sizing_mode="stretch_width"),
-            ),
+            header,
+            compare_row,
             pn.Spacer(height=20),
-            pn.Row(pn.Spacer(),
-                self.btn_Restore_Rev,
+            pn.Row(
+                pn.Spacer(),
+                self.btn_download_Rev,
                 pn.Spacer(width=20),
                 self.btn_cancel_Rev,
                 pn.Spacer(),
-                sizing_mode="stretch_width")
+                sizing_mode="stretch_width"
+            )
         ]
 
         self.pop_up_Rev.open = True
+    
+    def compare_2_df(self, df_rev0, df_rev_latest):
+        s0 = df_rev0.squeeze()
+        s1 = df_rev_latest.squeeze()
 
-    def fetch_detail_rec(self, id):
+        changed_fields = []
+
+        for field in s0.index:
+            v0 = s0.get(field)
+            v1 = s1.get(field)
+
+            if pd.isna(v0) and pd.isna(v1):
+                continue
+
+            if v0 != v1:
+                changed_fields.append(field)
+
+        return changed_fields
+    
+    def fetch_detail_rec_all_rev(self, id):
         Q = '''
         SELECT
+            cl.id,
             cl.Controller_Id,
             cl.Station,
             cl.PSET,
@@ -628,84 +665,9 @@ class PSET_change_log_Backend:
         FROM dbo.change_log cl
         JOIN jsonb_array_elements(cl.JsonData) AS j ON true
         WHERE cl.id = :id
-        AND (
-                (j->>'rev')::int = 0
-                OR 
-                (j->>'rev')::int = (
-                    SELECT MAX((j2->>'rev')::int)
-                    FROM jsonb_array_elements(JsonData) AS j2
-                )
-            )
-        ORDER BY (j->>'rev')::int;;
         '''
         params = {"id": id}
 
         Rev = pgsql.sql_to_df(query=Q, params=params,db='PSET', mod='PSET_data')
         return(Rev)
     
-    def compare_2_df(self, df_rev0, df_rev_latest):
-        s0 = df_rev0.squeeze()
-        s1 = df_rev_latest.squeeze()
-
-        changed_fields = []
-
-        for field in s0.index:
-            v0 = s0.get(field)
-            v1 = s1.get(field)
-
-            # เทียบแบบกัน NaN
-            if pd.isna(v0) and pd.isna(v1):
-                continue
-
-            if v0 != v1:
-                changed_fields.append(field)
-
-        return changed_fields
-    
-    def restore(self, id):
-        rev0_json_list = self.format_rev0(id)
-        print("************************************")
-        print(rev0_json_list)
-        Q_update = '''
-            UPDATE dbo.change_log
-            SET JsonData = :rev0_json
-            WHERE id = :id
-            ;
-        '''
-
-        params = {
-            "rev0_json": json.dumps(rev0_json_list),
-            "id": id
-        }
-        engine = create_engine(pgsql.connect_url(db=''), echo=False)
-
-        try:
-            with engine.begin() as conn:
-                conn.execute(text(Q_update), params)
-        except SQLAlchemyError as e:
-            logger.error(f"| Error updating item {id}: {e}")
-    
-    def format_rev0(self, id):
-        rev = self.fetch_detail_rec(id)
-
-        rev0 = rev.iloc[0]  # rev 0
-
-        rev0_json = {
-            "rev": 0,
-            "user": rev0.get("user", ""),
-            "note": rev0.get("note", ""),
-            "timestamp": datetime.now().isoformat(),  # CURRENT_TIMESTAMP
-            "timeLastChange": rev0.get("timeLastChange", ""),
-            "torque": {
-                "torque min": rev0.get("torque min", "0"),
-                "torque target": rev0.get("torque target", "0"),
-                "torque max": rev0.get("torque max", "0")
-            },
-            "angle": {
-                "angle min": rev0.get("angle min", "0"),
-                "angle target": rev0.get("angle target", "0"),
-                "angle max": rev0.get("angle max", "0")
-            }
-        }
-
-        return [rev0_json]
