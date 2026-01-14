@@ -57,7 +57,6 @@ class PSET_change_log_Backend:
         # ======================
         self.rev_compare_body = pn.Column(sizing_mode="stretch_both")
 
-        # self.btn_download_Rev = pn.widgets.Button(name="Download all revision", button_type="primary", width=170)
         self.btn_download_Rev = pn.widgets.FileDownload(
             callback=self.Download_Rev_click,
             auto=True,
@@ -72,7 +71,7 @@ class PSET_change_log_Backend:
             self.rev_compare_body,
             open=False,
             width=900,
-            height=600
+            height=650
         )
         self.btn_cancel_Rev.on_click(lambda e: setattr(self.pop_up_Rev, "open", False))
         # ======================
@@ -156,7 +155,6 @@ class PSET_change_log_Backend:
         # BIND EVENTS
         # ======================
         self.Refresh_button.on_click(self.Refresh_click)
-        # self.btn_save_insert.on_click(lambda e: self.save_click("insert"))
         self.btn_save_edit.on_click(lambda e: self.save_click("update"))
         self.All_Time_Warning_Checkbox.param.watch(
             self.on_all_time_change, "value"
@@ -550,42 +548,49 @@ class PSET_change_log_Backend:
             return
 
         rev_indexes = list(range(len(rev)))
-
-        self.rev_select = pn.widgets.Select(
-            name="Compare with revision",
+        
+        self.rev_select_left = pn.widgets.Select(
+            name="Revision base",
             options=rev_indexes,
-            value=rev_indexes[-1],   # default = latest
-            width=200
+            value=0,                 # default = rev0
+            width=160
         )
 
-        def update_view(selected_index):
-            rev0 = rev.iloc[0]
-            rev_latest = rev.iloc[selected_index]
+        self.rev_select_right = pn.widgets.Select(
+            name="Revision latest",
+            options=rev_indexes,
+            value=rev_indexes[-1],   # default = latest
+            width=160
+        )
 
-            changed_colum = self.compare_2_df(rev0, rev_latest)
+        def update_view(idx_left, idx_right):
+            rev_left = rev.iloc[idx_left]
+            rev_right = rev.iloc[idx_right]
 
-            df_right = rev_latest.to_frame(name=f"Revision {selected_index}")
-            df_left = rev0.to_frame(name="Revision 0")
+            changed_colum = self.compare_2_df(rev_left, rev_right)
+
+            df_left = rev_left.to_frame(name=f"Revision {idx_left}")
+            df_right = rev_right.to_frame(name=f"Revision {idx_right}")
 
             table_border_style = [
                 {"selector": "th", "props": [("border", "1px solid #555")]},
                 {"selector": "td", "props": [("border", "1px solid #555")]}
             ]
 
-            styled_right = (
-                df_right.style
-                .set_properties(
-                    subset=pd.IndexSlice[changed_colum, :],
-                    **{"background-color": "#6ae1ff", "font-weight": "bold"}
-                )
-                .set_table_styles(table_border_style)
-            )
-
             styled_left = (
                 df_left.style
                 .set_properties(
                     subset=pd.IndexSlice[changed_colum, :],
                     **{"background-color": "#ff6adf", "font-weight": "bold"}
+                )
+                .set_table_styles(table_border_style)
+            )
+
+            styled_right = (
+                df_right.style
+                .set_properties(
+                    subset=pd.IndexSlice[changed_colum, :],
+                    **{"background-color": "#6ae1ff", "font-weight": "bold"}
                 )
                 .set_table_styles(table_border_style)
             )
@@ -598,16 +603,31 @@ class PSET_change_log_Backend:
                 pn.Column(pane_right, sizing_mode="stretch_width"),
             )
         
-        compare_row = update_view(self.rev_select.value)
-        def _on_rev_change(event):
-            self.rev_compare_body[1] = update_view(event.new)
+        compare_row = update_view(
+            self.rev_select_left.value,
+            self.rev_select_right.value
+        )
 
-        self.rev_select.param.watch(_on_rev_change, "value")
-        header = pn.Row(
-            pn.pane.Markdown("## Revision Comparison: Initial vs Latest"),
-            pn.Spacer(width=20),
-            self.rev_select,
-            sizing_mode="stretch_width"
+        def _on_change(event):
+            self.rev_compare_body[1] = update_view(
+                self.rev_select_left.value,
+                self.rev_select_right.value
+            )
+
+        self.rev_select_left.param.watch(_on_change, "value")
+        self.rev_select_right.param.watch(_on_change, "value")
+
+        header = pn.Column(
+            pn.Row(
+                pn.pane.Markdown("## Revision Comparison"),
+                sizing_mode="stretch_width"
+            ),
+            pn.Row(
+                self.rev_select_left,
+                pn.Spacer(),  
+                self.rev_select_right,
+                sizing_mode="stretch_width"
+            )
         )
 
         self.rev_compare_body[:] = [
@@ -623,7 +643,7 @@ class PSET_change_log_Backend:
                 sizing_mode="stretch_width"
             )
         ]
-
+        
         self.pop_up_Rev.open = True
     
     def compare_2_df(self, df_rev0, df_rev_latest):
