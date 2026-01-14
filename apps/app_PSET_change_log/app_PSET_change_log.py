@@ -117,7 +117,8 @@ def PSET_change_log_page():
     PSET_change_log_table = pn.Column(
         # backend.insert_button,
         backend.table,
-        backend.pop_up_edit_form)
+        backend.pop_up_edit_form,
+        backend.pop_up_Rev)
     template.add_panel('PSET_change_log_table', PSET_change_log_table)
     return template
 

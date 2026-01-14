@@ -1,0 +1,282 @@
+id: PSET_change_Log
+namespace: company.team
+
+tasks:
+  - id: query_production_table
+    type: io.kestra.plugin.jdbc.postgresql.Query
+    url: jdbc:postgresql://postgresql_17:5432/portal
+    username: postgres
+    password: tKotT9xpeT
+    sql: |
+      SELECT DISTINCT ON (t."deviceId", t.pset_id)
+        t.created_at,
+        t."deviceId",
+        CAST(es.name AS text) AS station_name,
+        t.pset_id,
+        t.angle_min,
+        t.angle_target,
+        t.angle_max,
+        t.torque_min,
+        t.torque_target,
+        t.torque_max,
+        t.change_time
+      FROM (
+        SELECT
+          "createdAt" AS created_at,
+          "stringifiedDataJSON"->'payload'->>'parameterSetID'    AS pset_id,
+          "stringifiedDataJSON"->'payload'->>'angleMin'          AS angle_min,
+          "stringifiedDataJSON"->'payload'->>'finalAngleTarget'  AS angle_target,
+          "stringifiedDataJSON"->'payload'->>'angleMax'          AS angle_max,
+          "stringifiedDataJSON"->'payload'->>'torqueMinLimit'    AS torque_min,
+          "stringifiedDataJSON"->'payload'->>'torqueFinalTarget' AS torque_target,
+          "stringifiedDataJSON"->'payload'->>'torqueMaxLimit'    AS torque_max,
+          "stringifiedDataJSON"->'payload'->>'timeLastChange'    AS change_time,
+          "deviceId"
+        FROM dbo."Order_EOR_Testing"
+        WHERE
+          "createdAt" >= NOW() - INTERVAL(10 minute)
+          AND "createdAt" <= NOW()
+      ) t
+      LEFT JOIN dbo."Equipment_Device" ed
+        ON t."deviceId" = ed."id"
+      LEFT JOIN dbo."Equipment_Station" es
+        ON ed."stationId" = es."id"
+      ORDER BY
+        t."deviceId",
+        t.pset_id,
+        t.created_at DESC;
+    fetch: true
+  
+  - id: query_baseline_table
+    type: io.kestra.plugin.jdbc.postgresql.Query
+    url: jdbc:postgresql://postgresql_17:5432/PSET
+    username: postgres
+    password: tKotT9xpeT
+    sql: |
+      SELECT
+        Controller_Id,
+        Station,
+        PSET,
+
+        j->>'rev'              AS rev,
+        j->>'user'             AS "user",
+        j->>'note'             AS note,
+        j->>'timestamp'        AS "timestamp",
+        j->>'timeLastChange'   AS "timeLastChange",
+
+        j->'torque'->>'torque min'     AS "torque min",
+        j->'torque'->>'torque target'  AS "torque target",
+        j->'torque'->>'torque max'     AS "torque max",
+
+        j->'angle'->>'angle min'       AS "angle min",
+        j->'angle'->>'angle target'    AS "angle target",
+        j->'angle'->>'angle max'       AS "angle max"
+
+      FROM dbo.change_log,
+          jsonb_array_elements(JsonData) AS j
+      WHERE (j->>'rev')::int = (
+          SELECT MAX((j2->>'rev')::int)
+          FROM jsonb_array_elements(JsonData) AS j2
+      );
+    fetch: true
+
+  - id: compare_pset
+    type: io.kestra.plugin.scripts.python.Script
+    inputFiles:
+      prod.json: "{{ outputs.query_production_table.rows | json }}"
+      base.json: "{{ outputs.query_baseline_table.rows | json }}"
+    outputFiles:
+      - updates.json
+      - new_record.json
+    script: |
+      from datetime import datetime
+      import re
+      import json
+
+      def norm(v):
+        if v is None:
+          return None
+        # handle string
+        if isinstance(v, str):
+            v = v.strip()
+            if v == '' or v.lower() == 'null':
+                return None
+            # normalize time formats
+            time_candidates = [
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d:%H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S",
+            ]
+            for fmt in time_candidates:
+                try:
+                    return datetime.strptime(v, fmt)
+                except ValueError:
+                    pass
+            # numeric string
+            try:
+                return float(v)
+            except ValueError:
+                return v
+        # numbers stay numbers
+        if isinstance(v, (int, float)):
+            return float(v)
+        return v
+
+      def norm_key(v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+      with open("prod.json") as f:
+        prod = json.load(f)
+
+      with open("base.json") as f:
+        base = json.load(f)
+      
+      base_map = {
+          (norm_key(b.get("station")), norm_key(b.get("pset"))): b
+          for b in base
+      }
+
+      new_record = []
+      updates = []
+      
+      for p in prod:
+        station = p.get("station_name")
+        pset = p.get("pset_id")
+
+        b = base_map.get((station, pset))
+        new_json = {
+          "timeLastChange": p.get("change_time"),
+          "torque": {
+            "torque min": p.get("torque_min"),
+            "torque target": p.get("torque_target"),
+            "torque max": p.get("torque_max"),
+          },
+          "angle": {
+            "angle target": p.get("angle_target"),
+            "angle min": p.get("angle_min"),
+            "angle max": p.get("angle_max"),
+          }
+        }
+        if not b: #find new record 
+          new_record.append({
+              "Station": station,
+              "pset": pset,
+              "details": new_json,
+          })
+          continue
+
+        changed = False
+
+        base_id = ''
+
+        checks = [
+            ("change_time", "timeLastChange"),
+            ("torque_min", "torque min"),
+            ("torque_target", "torque target"),
+            ("torque_max", "torque max"),
+            ("angle_min", "angle min"),
+            ("angle_target", "angle target"),
+            ("angle_max", "angle max"),
+        ]
+
+        for pf, bf in checks:
+            if norm(p.get(pf)) != norm(b.get(bf)):
+                changed = True
+                base_id = b.get("controller_id")
+                break
+
+        if changed:
+          updates.append({
+            "Controller_Id": base_id,
+            "Station": station,
+            "pset": pset,
+            "details": new_json
+          })
+
+      with open("updates.json", "w") as f:
+          json.dump(updates, f)
+      with open("new_record.json", "w") as f:
+          json.dump(new_record, f)
+
+  - id: apply_pset_insert_new_record
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ json(read(outputs.compare_pset.outputFiles['new_record.json'])) }}"
+    tasks:
+      - id: insert_pset
+        type: io.kestra.plugin.jdbc.postgresql.Query
+        url: jdbc:postgresql://postgresql_17:5432/PSET
+        username: postgres
+        password: tKotT9xpeT
+        sql: |
+          WITH next_id AS (
+            SELECT nextval('dbo.change_log_id_seq') AS id
+          )
+          INSERT INTO dbo.change_log (
+            id,
+            controller_id,
+            station,
+            pset,
+            jsondata
+          )
+          SELECT
+            id,
+            'CTRL-' || lpad(id::text, 8, '0'),
+            '{{ json(taskrun.value).Station }}',
+            '{{ json(taskrun.value).pset }}',
+            jsonb_build_array(
+              jsonb_build_object(
+                'rev', 0,
+                'user', '',
+                'note', '',
+                'timestamp', CURRENT_TIMESTAMP,
+                'timeLastChange', '{{ json(taskrun.value).details.timeLastChange }}',
+                'torque', '{{ json(taskrun.value).details.torque | json }}'::jsonb,
+                'angle', '{{ json(taskrun.value).details.angle | json }}'::jsonb
+              )
+            )
+          FROM next_id;
+
+  - id: apply_pset_update
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ json(read(outputs.compare_pset.outputFiles['updates.json'])) }}"
+    tasks:
+      - id: update_pset
+        type: io.kestra.plugin.jdbc.postgresql.Query
+        url: jdbc:postgresql://postgresql_17:5432/PSET
+        username: postgres
+        password: tKotT9xpeT
+        sql: |
+          UPDATE dbo.change_log
+          SET jsondata = jsondata || jsonb_build_object(
+              'rev', (
+                SELECT COALESCE(MAX((item->>'rev')::int), 0) + 1
+                FROM jsonb_array_elements(jsondata) AS item
+              ),
+              'user','',
+              'note','',
+              'timestamp', CURRENT_TIMESTAMP,
+              'timeLastChange', '{{ json(taskrun.value).details.timeLastChange }}',
+              'torque', '{{ json(taskrun.value).details.torque | json }}'::jsonb,
+              'angle', '{{ json(taskrun.value).details.angle | json }}'::jsonb
+          )
+          WHERE 
+            Controller_Id = '{{ json(taskrun.value).Controller_Id }}'
+            AND pset = '{{ json(taskrun.value).pset }}'
+
+  - id: cleanup
+    type: io.kestra.plugin.core.execution.PurgeExecutions
+    namespace: "{{ flow.namespace }}"
+    flowId: "{{ flow.id }}"
+    endDate: "{{ now() }}"
+    states:
+      - SUCCESS
+
+
+# triggers:
+#   - id: schedule
+#     type: io.kestra.plugin.core.trigger.Schedule
+#     cron: "*/10 * * * *"

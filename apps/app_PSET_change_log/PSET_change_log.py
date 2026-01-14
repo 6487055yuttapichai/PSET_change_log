@@ -12,7 +12,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-
+from datetime import datetime
+import json
 
 
 pgsql = PGSQL()
@@ -23,6 +24,7 @@ class PSET_change_log_Backend:
         # STATE
         # ======================
         self.selected_row = {"row": None}
+
 
         # ======================
         # EDIT SECTION
@@ -49,7 +51,22 @@ class PSET_change_log_Backend:
         )
 
         self.btn_cancel_edit.on_click(lambda e: setattr(self.pop_up_edit_form, "open", False))
+        
+        # ======================
+        # REV0 SECTION
+        # ======================
+        self.rev_compare_body = pn.Column(sizing_mode="stretch_both")
 
+        self.btn_Restore_Rev = pn.widgets.Button(name="Restore", button_type="primary", width=170)
+        self.btn_cancel_Rev = pn.widgets.Button(name="Cancel", width=170)
+
+        self.pop_up_Rev = pn.layout.Modal(
+            self.rev_compare_body,
+            open=False,
+            width=900,
+            height=600
+        )
+        self.btn_cancel_Rev.on_click(lambda e: setattr(self.pop_up_Rev, "open", False))
         # ======================
         # FILTER SECTION
         # ======================
@@ -81,15 +98,18 @@ class PSET_change_log_Backend:
         # TABLE
         # ======================
         self.table = pn.widgets.Tabulator(
-            buttons={"edit": '<button class="btn btn-dark btn-sm">Edit</button>'},
+            buttons={
+                "edit": '<button class="btn btn-dark btn-sm">Edit</button>',
+                "Rev0": '<button class="btn btn-secondary btn-sm">Baseline Diff</button>',
+            },
             pagination="local",
             show_index=False,
             disabled=True,
             page_size=20,
             height=800,
             theme = 'bootstrap5',
-            hidden_columns=['Timelastchange'],
-            layout="fit_columns"
+            layout="fit_columns",
+            hidden_columns=['Timelastchange']
         )
 
         self.table.on_click(self.on_table_edit_click)
@@ -124,6 +144,7 @@ class PSET_change_log_Backend:
         self.Refresh_button.on_click(self.Refresh_click)
         # self.btn_save_insert.on_click(lambda e: self.save_click("insert"))
         self.btn_save_edit.on_click(lambda e: self.save_click("update"))
+        self.btn_Restore_Rev.on_click(self.restore_click)
         self.All_Time_Warning_Checkbox.param.watch(
             self.on_all_time_change, "value"
         )
@@ -161,6 +182,7 @@ class PSET_change_log_Backend:
         )
 
         rows = self.fetch_change_log(sql)
+        rows = rows[rows["Rev"] != 0] # select only rev > 0
         self.table.value = pd.DataFrame(rows) if rows is not None else pd.DataFrame()
 
     def save_click(self, type):
@@ -173,39 +195,29 @@ class PSET_change_log_Backend:
             )
             self.pop_up_edit_form.open = False
 
-        # if type == "insert":
-        #     self.insert_to_change_log(
-        #         Controller_ID=self.Controller_ID_input.value,
-        #         Station=self.Station_input.value,
-        #         Model=self.Model_input.value,
-        #         PSET=self.PSET_input.value,
-        #         User=self.Name_input.value,
-        #         Note=self.Note_input.value
-        #     )
-        #     self.pop_up_insert_form.open = False
+        self.Refresh_click()
+
+    def restore_click(self, event):
+        print(self.selected_row)
+        if self.selected_row.get("row"):
+            row = self.selected_row["row"]
+            self.restore(row["Log Id"])
+            self.pop_up_Rev.open = False
 
         self.Refresh_click()
 
     def on_table_edit_click(self, event):
-        if event.column != "edit":
-            return
-
         df = pd.DataFrame(self.table.value)
         row = df.iloc[event.row].to_dict()
-        self.selected_row["row"] = row
-        self.selected_info.object = (
-            f"**Log ID:** {row.get('Log Id')}  \n"
-            f"**Controller ID:** {row.get('Controller id')}  \n"
-            f"**Station:** {row.get('Station')}  \n"
-            f"**PSET:** {row.get('Pset')}  \n"
-            f"**Last Changed Time:** {row.get('Timelastchange')}  \n"
-            f"**Server Time:** {row.get('Server time')}"
-        )
+        if event.column == "edit":
+            self.selected_row["row"] = row
+            self.set_info_for_edit(row)
 
-        self.edit_name.value = row.get("User", "") or ""
-        self.edit_note.value = row.get("Note", "") or ""
+            self.pop_up_edit_form.open = True
 
-        self.pop_up_edit_form.open = True
+        elif event.column == "Rev0":
+            self.selected_row["row"] = row
+            self.compare_rev0(row['Log Id'])
 
     def on_all_time_change(self, event):
         if event.new:
@@ -281,8 +293,6 @@ class PSET_change_log_Backend:
             summary_df.columns = [col.replace("_", " ") for col in summary_df.columns]
             summary_df.rename(columns={'Id': 'Log Id'}, inplace=True)
 
-            summary_df = summary_df[summary_df["Rev"] != 0] # select only rev > 0
-
             return summary_df
         
         except Exception as ex:
@@ -291,19 +301,31 @@ class PSET_change_log_Backend:
 
     def update_Jasondata(self, Id, Note, User):
         query = """
-        UPDATE dbo.change_log
-        SET jsondata = jsondata || to_jsonb(
-            json_build_object(
-                'rev', (
-                    SELECT COALESCE(MAX((item->>'rev')::int), 0)
-                    FROM jsonb_array_elements(jsondata) AS item
-                ) + 1,
+        UPDATE dbo.change_log cl
+        SET jsondata = cl.jsondata || to_jsonb(
+            jsonb_build_object(
+                'rev', latest.rev + 1,
+                'angle', latest.angle,
+                'torque', latest.torque,
+                'timeLastChange', latest."timeLastChange",
                 'note', :note,
                 'user', :user,
                 'timestamp', CURRENT_TIMESTAMP
             )
         )
-        WHERE Id = :id
+        FROM (
+            SELECT
+                (item->>'rev')::int AS rev,
+                item->'angle' AS angle,
+                item->'torque' AS torque,
+                item->'timeLastChange' AS "timeLastChange"
+            FROM dbo.change_log cl2,
+                jsonb_array_elements(cl2.jsondata) AS item
+            WHERE cl2.id = :id
+            ORDER BY (item->>'rev')::int DESC
+            LIMIT 1
+        ) latest
+        WHERE cl.id = :id;
         """
 
         params = {
@@ -395,7 +417,7 @@ class PSET_change_log_Backend:
                 (elem.value->>'timestamp')::timestamp 
                     >= date_trunc('week', CURRENT_DATE) - INTERVAL '1 week'
                 AND (elem.value->>'timestamp')::timestamp 
-                    <  date_trunc('week', CURRENT_DATE)
+                    <=  date_trunc('week', CURRENT_DATE)
             """)
 
         # station & date
@@ -405,7 +427,7 @@ class PSET_change_log_Backend:
                 where_clauses.append(f"c.Station IN ({stations})")
             
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
-            where_clauses.append(f"(elem.value->>'timestamp')::timestamp <  '{date[1]}'")
+            where_clauses.append(f"(elem.value->>'timestamp')::timestamp <= '{date[1]}'")
         
         # station only
         elif len(station) > 0 :
@@ -416,7 +438,7 @@ class PSET_change_log_Backend:
         # date only
         elif date is not None :
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
-            where_clauses.append(f"(elem.value->>'timestamp')::timestamp <  '{date[1]}'")
+            where_clauses.append(f"(elem.value->>'timestamp')::timestamp <= '{date[1]}'")
         
         
         # Build where
@@ -487,3 +509,203 @@ class PSET_change_log_Backend:
         except SQLAlchemyError as e:
             logger.error(f"| Error get_model_list | {e}")
             return []
+    
+    def set_info_for_edit(self, row):
+        self.selected_info.object = (
+            f"**Log ID:** {row.get('Log Id')}  \n"
+            f"**Controller ID:** {row.get('Controller id')}  \n"
+            f"**Station:** {row.get('Station')}  \n"
+            f"**PSET:** {row.get('Pset')}  \n"
+            f"**Last Changed Time:** {row.get('Timelastchange')}  \n"
+            f"**Server Time:** {row.get('Server time')}"
+        )
+
+        self.edit_name.value = row.get("User", "") or ""
+        self.edit_note.value = row.get("Note", "") or ""
+
+    def compare_rev0(self, id):
+        rev = self.fetch_detail_rec(id)
+        
+        if len(rev) < 2:
+            pn.state.notifications.warning("Have some error with rev")
+            return
+
+        rev0 = rev.iloc[0]
+        rev_latest = rev.iloc[1]
+
+        changed_colum = self.compare_2_df(rev0, rev_latest)
+        df_right = rev_latest.to_frame(name="Revision latest")
+        df_left = rev0.to_frame(name="Revision 0")
+
+        table_border_style = [
+            {
+                "selector": "th",
+                "props": [
+                    ("border", "1px solid #555"),
+                    ("border-collapse", "collapse")
+                ]
+            },
+            {
+                "selector": "td",
+                "props": [
+                    ("border", "1px solid #555"),
+                    ("border-collapse", "collapse")
+                ]
+            }
+        ]
+        
+        styled_right = (
+            df_right.style
+            .set_properties(
+                subset=pd.IndexSlice[changed_colum, :],
+                **{
+                    "background-color": "#6ae1ff",
+                    "font-weight": "bold"
+                }
+            )
+            .set_table_styles(table_border_style)
+        )
+
+        styled_left = (
+            df_left.style
+            .set_properties(
+                subset=pd.IndexSlice[changed_colum, :],
+                **{
+                    "background-color": "#ff6adf",
+                    "font-weight": "bold"
+                }
+            )
+            .set_table_styles(table_border_style)
+        )
+
+
+        pane_left = pn.pane.DataFrame(
+            styled_left,
+            height=400,
+            sizing_mode="stretch_width"
+        )
+
+        pane_right = pn.pane.DataFrame(
+            styled_right,
+            height=400,
+            sizing_mode="stretch_width"
+        )
+
+        self.rev_compare_body[:] = [
+            pn.pane.Markdown("## Revision Comparison: Initial vs Latest"),
+            pn.Row(
+                pn.Column(pane_left, sizing_mode="stretch_width"),
+                pn.Column(pane_right, sizing_mode="stretch_width"),
+            ),
+            pn.Spacer(height=20),
+            pn.Row(pn.Spacer(),
+                self.btn_Restore_Rev,
+                pn.Spacer(width=20),
+                self.btn_cancel_Rev,
+                pn.Spacer(),
+                sizing_mode="stretch_width")
+        ]
+
+        self.pop_up_Rev.open = True
+
+    def fetch_detail_rec(self, id):
+        Q = '''
+        SELECT
+            cl.Controller_Id,
+            cl.Station,
+            cl.PSET,
+            j->>'rev'              AS rev,
+            j->>'user'             AS "user",
+            j->>'note'             AS note,
+            j->>'timestamp'        AS "timestamp",
+            j->>'timeLastChange'   AS "timeLastChange",
+            j->'torque'->>'torque min'     AS "torque min",
+            j->'torque'->>'torque target'  AS "torque target",
+            j->'torque'->>'torque max'     AS "torque max",
+            j->'angle'->>'angle min'       AS "angle min",
+            j->'angle'->>'angle target'    AS "angle target",
+            j->'angle'->>'angle max'       AS "angle max"
+        FROM dbo.change_log cl
+        JOIN jsonb_array_elements(cl.JsonData) AS j ON true
+        WHERE cl.id = :id
+        AND (
+                (j->>'rev')::int = 0
+                OR 
+                (j->>'rev')::int = (
+                    SELECT MAX((j2->>'rev')::int)
+                    FROM jsonb_array_elements(JsonData) AS j2
+                )
+            )
+        ORDER BY (j->>'rev')::int;;
+        '''
+        params = {"id": id}
+
+        Rev = pgsql.sql_to_df(query=Q, params=params,db='PSET', mod='PSET_data')
+        return(Rev)
+    
+    def compare_2_df(self, df_rev0, df_rev_latest):
+        s0 = df_rev0.squeeze()
+        s1 = df_rev_latest.squeeze()
+
+        changed_fields = []
+
+        for field in s0.index:
+            v0 = s0.get(field)
+            v1 = s1.get(field)
+
+            # เทียบแบบกัน NaN
+            if pd.isna(v0) and pd.isna(v1):
+                continue
+
+            if v0 != v1:
+                changed_fields.append(field)
+
+        return changed_fields
+    
+    def restore(self, id):
+        rev0_json_list = self.format_rev0(id)
+        print("************************************")
+        print(rev0_json_list)
+        Q_update = '''
+            UPDATE dbo.change_log
+            SET JsonData = :rev0_json
+            WHERE id = :id
+            ;
+        '''
+
+        params = {
+            "rev0_json": json.dumps(rev0_json_list),
+            "id": id
+        }
+        engine = create_engine(pgsql.connect_url(db=''), echo=False)
+
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(Q_update), params)
+        except SQLAlchemyError as e:
+            logger.error(f"| Error updating item {id}: {e}")
+    
+    def format_rev0(self, id):
+        rev = self.fetch_detail_rec(id)
+
+        rev0 = rev.iloc[0]  # rev 0
+
+        rev0_json = {
+            "rev": 0,
+            "user": rev0.get("user", ""),
+            "note": rev0.get("note", ""),
+            "timestamp": datetime.now().isoformat(),  # CURRENT_TIMESTAMP
+            "timeLastChange": rev0.get("timeLastChange", ""),
+            "torque": {
+                "torque min": rev0.get("torque min", "0"),
+                "torque target": rev0.get("torque target", "0"),
+                "torque max": rev0.get("torque max", "0")
+            },
+            "angle": {
+                "angle min": rev0.get("angle min", "0"),
+                "angle target": rev0.get("angle target", "0"),
+                "angle max": rev0.get("angle max", "0")
+            }
+        }
+
+        return [rev0_json]

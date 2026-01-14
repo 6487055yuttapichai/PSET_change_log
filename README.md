@@ -5,6 +5,7 @@ dev in python 3.13.9
 - [install requirements](#requirements)
 - [change_log table](#change_log)
 - [psets_models table](#psets_models)
+- [flow get new change_log record](#flow_change_log)
 
 ## requirements
 This command is used to **install** all required libraries from the requirements file:
@@ -25,7 +26,6 @@ CREATE TABLE dbo.change_log (
     Id serial4 NOT NULL,
     Controller_Id varchar(50) NOT NULL,
     Station varchar(255),
-    Model varchar(100),
     PSET varchar(20),
     JsonData JSONB,
     CreatedAt timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -38,24 +38,33 @@ CREATE TABLE dbo.change_log (
 
 ```sql
 INSERT INTO dbo.change_log
-    (Controller_Id, Station, Model, PSET, JsonData)
+    (Controller_Id, Station, PSET, JsonData)
 VALUES
     (
-        '001',
+        'CTRL-00000001',
         'C1-06R Brake Line Union',
-        'HUA',
-        '001',
+        '1',
         jsonb_build_array(
         	jsonb_build_object(
         		'rev', 0,
-        		'user', 'Z.lui',
-        		'note', '',
-        		'timestamp', CURRENT_TIMESTAMP
+                'user', '',
+                'note', '',
+                'timestamp', CURRENT_TIMESTAMP,
+                'timeLastChange', '2026-01-01',
+                'torque', jsonb_build_object(
+                    'torque max', '100',
+                    'torque min', '0',
+                    'torque target', '50'
+                ),
+                'angle', jsonb_build_object(
+                    'angle max', '100',
+                    'angle min', '0',
+                    'angle target', '50'
+                )
         		)
         	)
     );
 ```
-
 
 ## psets_models
 ### Command to create a change_log table Create
@@ -85,3 +94,11 @@ psql -h localhost -p 5454 -U postgres -d portal -f _Order_EOR__202511130254.sql
 | **-U** | Username used to connect | `-U postgres` |
 | **-d** | Target database to restore into | `-d portal` |
 | **-f** | SQL file to be executed (input file) | `-f _Order_EOR__202511130254.sql` |
+
+
+### flow_change_log
+This file is used in Kestra.It is used to fetch new data and compare it with existing data. If any changes are detected, the new data will be appended to the list of columns "JsonData"
+
+```
+PSET_change_log\Flow\import_new_data.yaml
+```

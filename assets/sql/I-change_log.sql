@@ -1,15 +1,14 @@
 INSERT INTO dbo.change_log
-    (Controller_Id, Station, Model, PSET, JsonData)
+    (Controller_Id, Station, PSET, JsonData)
 VALUES
     (
-        '001',
+        'CTRL-00000001',
         'C1-06R Brake Line Union',
-        'HUA',
         '001',
         jsonb_build_array(
         	jsonb_build_object(
         		'rev', 0,
-        		'user', 'Z.lui',
+        		'user', '',
         		'note', '',
         		'timestamp', CURRENT_TIMESTAMP
         		)
