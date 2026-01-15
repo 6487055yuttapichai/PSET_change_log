@@ -106,8 +106,8 @@ class PSET_change_log_Backend:
         # ======================
         self.table = pn.widgets.Tabulator(
             buttons={
-                "edit": '<button class="btn btn-dark btn-sm">Edit</button>',
-                "Rev0": '<button class="btn btn-secondary btn-sm">Baseline Diff</button>',
+                "edit": '<button class="btn btn-dark btn-lg">Edit</button>',
+                "Rev0": '<button class="btn btn-secondary btn-sm">Compare Rev</button>',
             },
             pagination="local",
             show_index=False,
@@ -115,12 +115,13 @@ class PSET_change_log_Backend:
             page_size=20,
             height=800,
             theme = 'bootstrap5',
-            layout="fit_columns"
+            header_align='center',
+            layout="fit_data_table"
         )
 
         self.table.text_align = {
-            "Log Id": "center",
-            "Pset": "center",
+            "Log ID": "center",
+            "PSET": "center",
             "Rev": "center",
         }
 
@@ -200,7 +201,7 @@ class PSET_change_log_Backend:
         if type == "update" and self.selected_row.get("row"):
             row = self.selected_row["row"]
             self.update_Jasondata(
-                row["Log Id"],
+                row["Log ID"],
                 self.edit_note.value,
                 self.edit_name.value
             )
@@ -213,7 +214,7 @@ class PSET_change_log_Backend:
             return None
 
         row = self.selected_row["row"]
-        id = row["Log Id"]
+        id = row["Log ID"]
 
         all_rev = self.fetch_detail_rec_all_rev(id)
         if all_rev is None or all_rev.empty:
@@ -235,7 +236,7 @@ class PSET_change_log_Backend:
 
         elif event.column == "Rev0":
             self.selected_row["row"] = row
-            self.compare_rev0(row['Log Id'])
+            self.compare_rev0(row['Log ID'])
 
     def on_all_time_change(self, event):
         if event.new:
@@ -307,9 +308,16 @@ class PSET_change_log_Backend:
             except:
                 pass
             
+            summary_df["Last Time Change"] = pd.to_datetime(
+                summary_df["Last Time Change"],
+                format="%Y-%m-%d:%H:%M:%S"
+            )
+            summary_df["Last Time Change"] = summary_df["Last Time Change"].dt.strftime("%y-%m-%d %H:%M:%S")
+            
             summary_df.columns = [col.capitalize() for col in summary_df.columns]
             summary_df.columns = [col.replace("_", " ") for col in summary_df.columns]
-            summary_df.rename(columns={'Id': 'Log Id'}, inplace=True)
+            summary_df.rename(columns={'Id': 'Log ID', 'Pset': 'PSET', 'Controller id': 'Controller ID'}, inplace=True)
+            summary_df['Log ID'] = summary_df['Log ID'].astype(str)
 
             return summary_df
         
@@ -530,11 +538,11 @@ class PSET_change_log_Backend:
     
     def set_info_for_edit(self, row):
         self.selected_info.object = (
-            f"**Log ID:** {row.get('Log Id')}  \n"
-            f"**Controller ID:** {row.get('Controller id')}  \n"
+            f"**Log ID:** {row.get('Log ID')}  \n"
+            f"**Controller ID:** {row.get('Controller ID')}  \n"
             f"**Station:** {row.get('Station')}  \n"
-            f"**PSET:** {row.get('Pset')}  \n"
-            f"**Last Changed Time:** {row.get('Timelastchange')}  \n"
+            f"**PSET:** {row.get('PSET')}  \n"
+            f"**Last Changed Time:** {row.get('Last time change')}  \n"
             f"**Server Time:** {row.get('Server time')}"
         )
 
@@ -566,7 +574,6 @@ class PSET_change_log_Backend:
         def update_view(idx_left, idx_right):
             rev_left = rev.iloc[idx_left]
             rev_right = rev.iloc[idx_right]
-
             changed_colum = self.compare_2_df(rev_left, rev_right)
 
             df_left = rev_left.to_frame(name=f"Revision {idx_left}")
@@ -689,5 +696,19 @@ class PSET_change_log_Backend:
         params = {"id": id}
 
         Rev = pgsql.sql_to_df(query=Q, params=params,db='PSET', mod='PSET_data')
+        # format time
+        Rev["timestamp"] = pd.to_datetime(
+            Rev["timestamp"],
+            errors="coerce", 
+            utc=True          
+        )
+        Rev["timeLastChange"] = pd.to_datetime(
+            Rev["timeLastChange"],
+            format="%Y-%m-%d:%H:%M:%S",
+            errors="coerce"
+        )
+        Rev["timestamp"] = Rev["timestamp"].dt.strftime("%y-%m-%d %H:%M:%S")
+        Rev["timeLastChange"] = Rev["timeLastChange"].dt.strftime("%y-%m-%d %H:%M:%S")
+
         return(Rev)
     

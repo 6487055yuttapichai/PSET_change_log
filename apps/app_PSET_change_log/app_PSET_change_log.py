@@ -99,16 +99,18 @@ def PSET_change_log_page():
     # -----------------------
     # Extract controls
     controls_column = pn.Column(
-        pn.Row(
-            backend.Refresh_button,
-            pn.pane.Markdown("### The data is refreshed every 10 minutes.")
-        ),
+        # pn.Row(
+        #     backend.Refresh_button,
+        #     pn.pane.Markdown("### The data is refreshed every 10 minutes.")
+        # ),
+        backend.Refresh_button,
         backend.Station_filter,
         backend.date_range_picker,
         backend.Refresh_while_acquirin_Checkbox,
         backend.Current_Week_Checkbox,
         backend.Previous_Week_Checkbox,
         backend.All_Time_Warning_Checkbox,
+        pn.pane.Markdown("** Monitoring for changes every 10 minutes."),
         # backend.pop_up_insert_form,
         # height=300
         sizing_mode='stretch_width'
