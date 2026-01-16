@@ -25,7 +25,7 @@ pip freeze >> requirements.txt
 CREATE TABLE dbo.change_log (
     Id serial4 NOT NULL,
     Controller_Id varchar(50) NOT NULL,
-    Station varchar(255),
+    device_name varchar(255),
     PSET varchar(20),
     JsonData JSONB,
     CreatedAt timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE dbo.change_log (
 
 ```sql
 INSERT INTO dbo.change_log
-    (Controller_Id, Station, PSET, JsonData)
+    (Controller_Id, device_name, PSET, JsonData)
 VALUES
     (
         'CTRL-00000001',

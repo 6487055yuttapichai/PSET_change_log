@@ -71,15 +71,15 @@ class PSET_change_log_Backend:
             self.rev_compare_body,
             open=False,
             width=900,
-            height=650
+            height=680
         )
         self.btn_cancel_Rev.on_click(lambda e: setattr(self.pop_up_Rev, "open", False))
         # ======================
         # FILTER SECTION
         # ======================
-        self.Station_filter = pn.widgets.MultiChoice(
-            name='Select station',
-            options=self.get_station_list(),
+        self.Device_name_filter = pn.widgets.MultiChoice(
+            name='Select Device name',
+            options=self.get_Device_name_list(),
             visible=False,
             width=500
         )
@@ -96,7 +96,7 @@ class PSET_change_log_Backend:
         self.Current_Week_Checkbox = pn.widgets.Checkbox(name="Current Week", value=True)
         self.Previous_Week_Checkbox = pn.widgets.Checkbox(name="Previous Week", value=True)
         self.All_Time_Warning_Checkbox = pn.widgets.Checkbox(
-            name="All Time and Station", value=False
+            name="All Time and Device", value=False
         )
 
         self.Refresh_button = pn.widgets.Button(name="Refresh ", button_type="primary", width=100)
@@ -189,7 +189,7 @@ class PSET_change_log_Backend:
             self.Current_Week_Checkbox.value,
             self.Previous_Week_Checkbox.value,
             self.All_Time_Warning_Checkbox.value,
-            self.Station_filter.value,
+            self.Device_name_filter.value,
             self.date_range_picker.value
         )
 
@@ -255,10 +255,10 @@ class PSET_change_log_Backend:
             or self.Current_Week_Checkbox.value
             or self.Previous_Week_Checkbox.value
         ):
-            self.Station_filter.visible = False
+            self.Device_name_filter.visible = False
             self.date_range_picker.visible = False
         else:
-            self.Station_filter.visible = True
+            self.Device_name_filter.visible = True
             self.date_range_picker.visible = True
 
     def on_any_change(self, event):
@@ -312,7 +312,7 @@ class PSET_change_log_Backend:
                 summary_df["Last Time Change"],
                 format="%Y-%m-%d:%H:%M:%S"
             )
-            summary_df["Last Time Change"] = summary_df["Last Time Change"].dt.strftime("%y-%m-%d %H:%M:%S")
+            summary_df["Last Time Change"] = summary_df["Last Time Change"].dt.strftime("%Y-%m-%d %H:%M:%S")
             
             summary_df.columns = [col.capitalize() for col in summary_df.columns]
             summary_df.columns = [col.replace("_", " ") for col in summary_df.columns]
@@ -398,14 +398,14 @@ class PSET_change_log_Backend:
         Current_Week_Checkbox,
         Previous_Week_Checkbox,
         All_Time_Warning_Checkbox,
-        station,
+        Device_name,
         date
     ):
         base_sql = """
             SELECT 
                 c.Id,
                 c.Controller_Id,
-                c.Station,
+                c."device_name",
                 c.PSET,
                 elem.value AS jsonitem
             FROM dbo.change_log c
@@ -446,20 +446,20 @@ class PSET_change_log_Backend:
                     <=  date_trunc('week', CURRENT_DATE)
             """)
 
-        # station & date
-        elif len(station) > 0  and date is not None:
-            if "All Station" not in station:
-                stations = ", ".join(f"'{s}'" for s in station)
-                where_clauses.append(f"c.Station IN ({stations})")
+        # Device name & date
+        elif len(Device_name) > 0  and date is not None:
+            if "All Device" not in Device_name:
+                Device_names = ", ".join(f"'{s}'" for s in Device_name)
+                where_clauses.append(f"c.\"device_name\" IN ({Device_names})")
             
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
             where_clauses.append(f"(elem.value->>'timestamp')::timestamp <= '{date[1]}'")
         
-        # station only
-        elif len(station) > 0 :
-            if "All Station" not in station:
-                stations = ", ".join(f"'{s}'" for s in station)
-                where_clauses.append(f"c.Station IN ({stations})")
+        # Device only
+        elif len(Device_name) > 0 :
+            if "All Device" not in Device_name:
+                Device_names = ", ".join(f"'{s}'" for s in Device_name)
+                where_clauses.append(f"c.\"device_name\" IN ({Device_names})")
 
         # date only
         elif date is not None :
@@ -480,11 +480,11 @@ class PSET_change_log_Backend:
 
         return final_sql
 
-    def get_station_list(self):
+    def get_Device_name_list(self):
         query = """
-            SELECT DISTINCT "station"
-            FROM dbo.tool_psets_models
-            ORDER BY "station";
+            SELECT DISTINCT "device_name"
+            FROM dbo.change_log
+            ORDER BY "device_name";
         """
 
         engine = create_engine(pgsql.connect_url(db=None), echo=False)
@@ -492,25 +492,25 @@ class PSET_change_log_Backend:
         try:
             with engine.connect() as conn:
                 result = conn.execute(text(query))
-                station_list = [row[0] for row in result]
+                Device_name_list = [row[0] for row in result]
 
-            station_list.insert(0, "All Station")
-            return station_list
+            Device_name_list.insert(0, "All Device")
+            return Device_name_list
 
         except SQLAlchemyError as e:
-            logger.error(f"| Error get_station_list | {e}")
+            logger.error(f"| Error get_Device_name_list | {e}")
             return []
 
-    def get_station_dict(self):
+    def get_Device_name_dict(self):
         # EX. output {'F1': ['F1-AA 123456', 'F1-BB 741852'], 'G1': ['G1-TT 951753', 'G1-PP 357159']}
-        station_list = self.get_station_list()
-        station_list.remove("All Station")
+        Device_name_list = self.get_Device_name_list()
+        Device_name_list.remove("All Device")
         groups = defaultdict(list)
 
         # set defalut none to list
         groups[""] = [""]
 
-        for s in station_list:
+        for s in Device_name_list:
             prefix = s[:2]   # check the first 2 characters
             groups[prefix].append(s)
 
@@ -540,7 +540,7 @@ class PSET_change_log_Backend:
         self.selected_info.object = (
             f"**Log ID:** {row.get('Log ID')}  \n"
             f"**Controller ID:** {row.get('Controller ID')}  \n"
-            f"**Station:** {row.get('Station')}  \n"
+            f"**Device:** {row.get('Device name')}  \n"
             f"**PSET:** {row.get('PSET')}  \n"
             f"**Last Changed Time:** {row.get('Last time change')}  \n"
             f"**Server Time:** {row.get('Server time')}"
@@ -558,17 +558,18 @@ class PSET_change_log_Backend:
         rev_indexes = list(range(len(rev)))
         
         self.rev_select_left = pn.widgets.Select(
-            name="Revision base",
             options=rev_indexes,
             value=0,                 # default = rev0
-            width=160
+            width=160,
+            align="start"
         )
-
+        
+        
         self.rev_select_right = pn.widgets.Select(
-            name="Revision latest",
             options=rev_indexes,
             value=rev_indexes[-1],   # default = latest
-            width=160
+            width=160,
+            align="end"
         )
 
         def update_view(idx_left, idx_right):
@@ -630,11 +631,21 @@ class PSET_change_log_Backend:
                 sizing_mode="stretch_width"
             ),
             pn.Row(
-                self.rev_select_left,
-                pn.Spacer(),  
-                self.rev_select_right,
+                pn.Column(
+                    pn.pane.Markdown("**Revision base**"),
+                    self.rev_select_left,
+                    width=220
+                ),
+                pn.Spacer(sizing_mode="stretch_width"), 
+                pn.Column(   
+                    pn.pane.Markdown("**Revision latest**", styles={"text-align": "right", "width": "100%"}),
+                    self.rev_select_right,
+                    width=220,
+                    align="end"
+                ),
                 sizing_mode="stretch_width"
-            )
+            ),
+            sizing_mode="stretch_width"
         )
 
         self.rev_compare_body[:] = [
@@ -676,7 +687,7 @@ class PSET_change_log_Backend:
         SELECT
             cl.id,
             cl.Controller_Id,
-            cl.Station,
+            cl."device_name",
             cl.PSET,
             j->>'rev'              AS rev,
             j->>'user'             AS "user",
@@ -707,8 +718,8 @@ class PSET_change_log_Backend:
             format="%Y-%m-%d:%H:%M:%S",
             errors="coerce"
         )
-        Rev["timestamp"] = Rev["timestamp"].dt.strftime("%y-%m-%d %H:%M:%S")
-        Rev["timeLastChange"] = Rev["timeLastChange"].dt.strftime("%y-%m-%d %H:%M:%S")
+        Rev["timestamp"] = Rev["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        Rev["timeLastChange"] = Rev["timeLastChange"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
         return(Rev)
     

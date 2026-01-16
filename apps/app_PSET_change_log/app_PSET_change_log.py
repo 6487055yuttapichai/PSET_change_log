@@ -104,7 +104,7 @@ def PSET_change_log_page():
         #     pn.pane.Markdown("### The data is refreshed every 10 minutes.")
         # ),
         backend.Refresh_button,
-        backend.Station_filter,
+        backend.Device_name_filter,
         backend.date_range_picker,
         backend.Refresh_while_acquirin_Checkbox,
         backend.Current_Week_Checkbox,

@@ -11,7 +11,7 @@ tasks:
       SELECT DISTINCT ON (t."deviceId", t.pset_id)
         t.created_at,
         t."deviceId",
-        CAST(es.name AS text) AS station_name,
+        CAST(ed.name AS text) AS device_name,
         t.pset_id,
         t.angle_min,
         t.angle_target,
@@ -32,15 +32,13 @@ tasks:
           "stringifiedDataJSON"->'payload'->>'torqueMaxLimit'    AS torque_max,
           "stringifiedDataJSON"->'payload'->>'timeLastChange'    AS change_time,
           "deviceId"
-        FROM dbo."Order_EOR_Testing"
+        FROM dbo."Order_EOR"
         WHERE
-          "createdAt" >= NOW() - INTERVAL(10 minute)
-          AND "createdAt" <= NOW()
+          "createdAt" >= NOW() - INTERVAL '10 minutes'
+          AND "createdAt" < NOW()
       ) t
       LEFT JOIN dbo."Equipment_Device" ed
         ON t."deviceId" = ed."id"
-      LEFT JOIN dbo."Equipment_Station" es
-        ON ed."stationId" = es."id"
       ORDER BY
         t."deviceId",
         t.pset_id,
@@ -55,7 +53,7 @@ tasks:
     sql: |
       SELECT
         Controller_Id,
-        Station,
+        device_name,
         PSET,
 
         j->>'rev'              AS rev,
@@ -126,7 +124,7 @@ tasks:
         if v is None:
             return None
         if isinstance(v, str):
-            return v.strip()
+            return " ".join(v.strip().split()).lower()
         return v
 
       with open("prod.json") as f:
@@ -136,7 +134,7 @@ tasks:
         base = json.load(f)
       
       base_map = {
-          (norm_key(b.get("station")), norm_key(b.get("pset"))): b
+          (norm_key(b.get("device_name")), norm_key(b.get("pset"))): b
           for b in base
       }
 
@@ -144,10 +142,11 @@ tasks:
       updates = []
       
       for p in prod:
-        station = p.get("station_name")
-        pset = p.get("pset_id")
-
-        b = base_map.get((station, pset))
+        Device_name = norm_key(p.get("device_name"))
+        pset = norm_key(p.get("pset_id"))
+        
+        b = base_map.get((Device_name, pset))
+        
         new_json = {
           "timeLastChange": p.get("change_time"),
           "torque": {
@@ -163,7 +162,7 @@ tasks:
         }
         if not b: #find new record 
           new_record.append({
-              "Station": station,
+              "Device_name": Device_name,
               "pset": pset,
               "details": new_json,
           })
@@ -192,7 +191,7 @@ tasks:
         if changed:
           updates.append({
             "Controller_Id": base_id,
-            "Station": station,
+            "Device_name": Device_name,
             "pset": pset,
             "details": new_json
           })
@@ -218,14 +217,14 @@ tasks:
           INSERT INTO dbo.change_log (
             id,
             controller_id,
-            station,
+            device_name,
             pset,
             jsondata
           )
           SELECT
             id,
             'CTRL-' || lpad(id::text, 8, '0'),
-            '{{ json(taskrun.value).Station }}',
+            '{{ json(taskrun.value).Device_name }}',
             '{{ json(taskrun.value).pset }}',
             jsonb_build_array(
               jsonb_build_object(
@@ -264,7 +263,7 @@ tasks:
               'angle', '{{ json(taskrun.value).details.angle | json }}'::jsonb
           )
           WHERE 
-            Controller_Id = '{{ json(taskrun.value).Controller_Id }}'
+            controller_id = '{{ json(taskrun.value).Controller_Id }}'
             AND pset = '{{ json(taskrun.value).pset }}'
 
   - id: cleanup
