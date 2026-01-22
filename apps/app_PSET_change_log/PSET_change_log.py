@@ -731,6 +731,21 @@ class PSET_change_log_Backend:
         )
         rev["timestamp"] = rev["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
         rev["timeLastChange"] = rev["timeLastChange"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        rev = rev.rename(columns={'id':'Log ID',
+                                  'controller_id':'Controller ID',
+                                  'device_name':'Device',
+                                  'pset':'PSET',
+                                  'rev':'Rev',
+                                  'user': 'User',
+                                  'note':'Note',
+                                  'timestamp':'Server Time',
+                                  'timeLastChange':'Time Last Change',
+                                  'torque min':'Torque Min',
+                                  'torque max':'Torque Max',
+                                  'angle min':'Angle Min',
+                                  'angle max':'Angle Max',
+                                  'torque target':'Torque Target',
+                                  'angle target':'Angle Target'})
 
         return(rev)
     
