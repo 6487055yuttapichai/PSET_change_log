@@ -45,16 +45,30 @@ tasks:
         t.created_at DESC;
     fetch: true
   
-  - id: query_baseline_table
+  - id: query_device_controller
     type: io.kestra.plugin.jdbc.postgresql.Query
-    url: jdbc:postgresql://postgresql_17:5432/PSET
+    url: jdbc:postgresql://postgresql_17:5432/portal
     username: postgres
     password: tKotT9xpeT
     sql: |
       SELECT
-        Controller_Id,
+        deviceid,
+        devicename,
+        toolserialnumber,
+        controllerserialnumber
+      FROM reporting.device_controller;
+    fetch: true
+
+  - id: query_baseline_table
+    type: io.kestra.plugin.jdbc.postgresql.Query
+    url: jdbc:postgresql://postgresql_17:5432/portal
+    username: postgres
+    password: tKotT9xpeT
+    sql: |
+      SELECT
+        controller_id,
         device_name,
-        PSET,
+        pset,
 
         j->>'rev'              AS rev,
         j->>'user'             AS "user",
@@ -70,18 +84,60 @@ tasks:
         j->'angle'->>'angle target'    AS "angle target",
         j->'angle'->>'angle max'       AS "angle max"
 
-      FROM dbo.change_log,
+      FROM reporting.change_log,
           jsonb_array_elements(JsonData) AS j
       WHERE (j->>'rev')::int = (
           SELECT MAX((j2->>'rev')::int)
           FROM jsonb_array_elements(JsonData) AS j2
       );
     fetch: true
+  
+  - id: add_controller_field
+    type: io.kestra.plugin.scripts.python.Script
+    inputFiles:
+      prod.json: "{{ outputs.query_production_table.rows | json }}"
+      dc.json: "{{ outputs.query_device_controller.rows | json }}"
+    outputFiles:
+      - prod_plus_controller.json
+    script: |
+      import json
+
+      def norm(v):
+          if v is None:
+              return None
+          return str(v).strip().lower()
+
+      with open("prod.json") as f:
+          prod = json.load(f)
+
+      with open("dc.json") as f:
+          dc = json.load(f)
+
+      dc_map = {norm(d["devicename"]): d for d in dc if d.get("devicename")}
+      
+      enriched = []
+
+      for p in prod:
+          row = dict(p)
+          devicename = norm(p.get("device_name"))
+          
+          match = dc_map.get(devicename)
+
+          if match:
+              row["controller_serial_number"] = match.get("controllerserialnumber")
+          else:
+            print(repr(devicename))
+            row["controller_serial_number"] = None
+
+          enriched.append(row)
+      print(enriched)
+      with open("prod_plus_controller.json", "w") as f:
+          json.dump(enriched, f)
 
   - id: compare_pset
     type: io.kestra.plugin.scripts.python.Script
     inputFiles:
-      prod.json: "{{ outputs.query_production_table.rows | json }}"
+      prod.json: "{{ json(read(outputs.add_controller_field.outputFiles['prod_plus_controller.json'])) }}"
       base.json: "{{ outputs.query_baseline_table.rows | json }}"
     outputFiles:
       - updates.json
@@ -144,6 +200,7 @@ tasks:
       for p in prod:
         Device_name = norm_key(p.get("device_name"))
         pset = norm_key(p.get("pset_id"))
+        controller_serial_number = norm_key(p.get("controller_serial_number"))
         
         b = base_map.get((Device_name, pset))
         
@@ -165,6 +222,7 @@ tasks:
               "Device_name": Device_name,
               "pset": pset,
               "details": new_json,
+              "controller_id": controller_serial_number
           })
           continue
 
@@ -190,7 +248,7 @@ tasks:
 
         if changed:
           updates.append({
-            "Controller_Id": base_id,
+            "controller_id": base_id,
             "Device_name": Device_name,
             "pset": pset,
             "details": new_json
@@ -201,29 +259,25 @@ tasks:
       with open("new_record.json", "w") as f:
           json.dump(new_record, f)
 
+
   - id: apply_pset_insert_new_record
     type: io.kestra.plugin.core.flow.ForEach
     values: "{{ json(read(outputs.compare_pset.outputFiles['new_record.json'])) }}"
     tasks:
       - id: insert_pset
         type: io.kestra.plugin.jdbc.postgresql.Query
-        url: jdbc:postgresql://postgresql_17:5432/PSET
+        url: jdbc:postgresql://postgresql_17:5432/portal
         username: postgres
         password: tKotT9xpeT
         sql: |
-          WITH next_id AS (
-            SELECT nextval('dbo.change_log_id_seq') AS id
-          )
-          INSERT INTO dbo.change_log (
-            id,
+          INSERT INTO reporting.change_log (
             controller_id,
             device_name,
             pset,
             jsondata
           )
-          SELECT
-            id,
-            'CTRL-' || lpad(id::text, 8, '0'),
+          VALUES (
+            '{{ json(taskrun.value).controller_id ?? null }}',
             '{{ json(taskrun.value).Device_name }}',
             '{{ json(taskrun.value).pset }}',
             jsonb_build_array(
@@ -232,12 +286,13 @@ tasks:
                 'user', '',
                 'note', '',
                 'timestamp', CURRENT_TIMESTAMP,
-                'timeLastChange', '{{ json(taskrun.value).details.timeLastChange }}',
+                'timeLastChange', '{{ json(taskrun.value).details.timeLastChange | json }}'::jsonb,
                 'torque', '{{ json(taskrun.value).details.torque | json }}'::jsonb,
                 'angle', '{{ json(taskrun.value).details.angle | json }}'::jsonb
               )
             )
-          FROM next_id;
+          )
+          RETURNING id;
 
   - id: apply_pset_update
     type: io.kestra.plugin.core.flow.ForEach
@@ -245,11 +300,11 @@ tasks:
     tasks:
       - id: update_pset
         type: io.kestra.plugin.jdbc.postgresql.Query
-        url: jdbc:postgresql://postgresql_17:5432/PSET
+        url: jdbc:postgresql://postgresql_17:5432/portal
         username: postgres
         password: tKotT9xpeT
         sql: |
-          UPDATE dbo.change_log
+          UPDATE reporting.change_log
           SET jsondata = jsondata || jsonb_build_object(
               'rev', (
                 SELECT COALESCE(MAX((item->>'rev')::int), 0) + 1
@@ -263,7 +318,7 @@ tasks:
               'angle', '{{ json(taskrun.value).details.angle | json }}'::jsonb
           )
           WHERE 
-            controller_id = '{{ json(taskrun.value).Controller_Id }}'
+            controller_id = '{{ json(taskrun.value).controller_id }}'
             AND pset = '{{ json(taskrun.value).pset }}'
 
   - id: cleanup
