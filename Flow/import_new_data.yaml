@@ -105,7 +105,7 @@ tasks:
       def norm(v):
           if v is None:
               return None
-          return str(v).strip().lower()
+          return str(v).strip()
 
       with open("prod.json") as f:
           prod = json.load(f)
@@ -126,11 +126,9 @@ tasks:
           if match:
               row["controller_serial_number"] = match.get("controllerserialnumber")
           else:
-            print(repr(devicename))
             row["controller_serial_number"] = None
 
           enriched.append(row)
-      print(enriched)
       with open("prod_plus_controller.json", "w") as f:
           json.dump(enriched, f)
 
@@ -180,7 +178,7 @@ tasks:
         if v is None:
             return None
         if isinstance(v, str):
-            return " ".join(v.strip().split()).lower()
+            return " ".join(v.strip().split())
         return v
 
       with open("prod.json") as f:
@@ -219,7 +217,7 @@ tasks:
         }
         if not b: #find new record 
           new_record.append({
-              "Device_name": Device_name,
+              "Device_name": p.get("device_name"),
               "pset": pset,
               "details": new_json,
               "controller_id": controller_serial_number
@@ -228,10 +226,7 @@ tasks:
 
         changed = False
 
-        base_id = ''
-
         checks = [
-            ("change_time", "timeLastChange"),
             ("torque_min", "torque min"),
             ("torque_target", "torque target"),
             ("torque_max", "torque max"),
@@ -240,16 +235,18 @@ tasks:
             ("angle_max", "angle max"),
         ]
 
-        for pf, bf in checks:
-            if norm(p.get(pf)) != norm(b.get(bf)):
+        if norm(p.get("change_time")) == norm(b.get("timeLastChange")):
+          continue
+        else:
+          for pf, bf in checks:
+              if norm(p.get(pf)) != norm(b.get(bf)):
                 changed = True
-                base_id = b.get("controller_id")
                 break
 
         if changed:
           updates.append({
-            "controller_id": base_id,
-            "Device_name": Device_name,
+            "controller_id": b.get("controller_id"),
+            "Device_name": p.get("device_name"),
             "pset": pset,
             "details": new_json
           })
@@ -274,7 +271,8 @@ tasks:
             controller_id,
             device_name,
             pset,
-            jsondata
+            jsondata,
+            createdat
           )
           VALUES (
             '{{ json(taskrun.value).controller_id ?? null }}',
@@ -290,7 +288,8 @@ tasks:
                 'torque', '{{ json(taskrun.value).details.torque | json }}'::jsonb,
                 'angle', '{{ json(taskrun.value).details.angle | json }}'::jsonb
               )
-            )
+            ),
+            CURRENT_TIMESTAMP
           )
           RETURNING id;
 
