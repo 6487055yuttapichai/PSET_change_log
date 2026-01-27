@@ -106,7 +106,6 @@ def PSET_change_log_page():
         backend.Refresh_button,
         backend.Device_name_filter,
         backend.date_range_picker,
-        backend.Refresh_while_acquirin_Checkbox,
         backend.Current_Week_Checkbox,
         backend.Previous_Week_Checkbox,
         backend.All_Time_Warning_Checkbox,

@@ -90,9 +90,7 @@ class PSET_change_log_Backend:
             width=300
         )
 
-        self.Refresh_while_acquirin_Checkbox = pn.widgets.Checkbox(
-            name="Refresh while acquiring data", value=False
-        )
+        
         self.Current_Week_Checkbox = pn.widgets.Checkbox(name="Current Week", value=True)
         self.Previous_Week_Checkbox = pn.widgets.Checkbox(name="Previous Week", value=True)
         self.All_Time_Warning_Checkbox = pn.widgets.Checkbox(
@@ -104,6 +102,23 @@ class PSET_change_log_Backend:
         # ======================
         # TABLE
         # ======================
+        self.title = {"log_id": "Log ID",
+            "controller_id": "Controller ID",
+            "device": "Device",
+            "pset": "PSET",
+            "time_last_change": "Time Last Change",
+            "rev": "Rev",
+            "rev_time": "Revision Time",
+            "user": "User",
+            "note": "Note",
+            "createdat": "Created At",
+            "torque_max": "Torque Max",
+            "torque_target": "Torque Target",
+            "torque_min": "Torque Min",
+            "angle_max": "Angle Max",
+            "angle_target": "Angle Target",
+            "angle_min": "Angle Min",
+            "update_at": "Update At"}
         self.table = pn.widgets.Tabulator(
             buttons={
                 "edit": '<button class="btn btn-dark btn-lg">Edit</button>',
@@ -116,7 +131,8 @@ class PSET_change_log_Backend:
             height=800,
             theme = 'bootstrap5',
             header_align='center',
-            layout="fit_data_table"
+            layout="fit_data_table",
+            titles = self.title 
         )
 
         self.table.text_align = {
@@ -185,7 +201,6 @@ class PSET_change_log_Backend:
     # ======================
     def refresh_click(self, event=None):
         sql = self.filter_by_checkbox(
-            self.Refresh_while_acquirin_Checkbox.value,
             self.Current_Week_Checkbox.value,
             self.Previous_Week_Checkbox.value,
             self.All_Time_Warning_Checkbox.value,
@@ -194,26 +209,15 @@ class PSET_change_log_Backend:
         )
 
         rows = self.fetch_change_log(sql)
-        rows = rows[rows["Rev"] != 0] # select only rev > 0
 
-        rows = rows.rename(columns={
-            "Id": "Log ID",
-            "Controller id": "Controller ID",
-            "Device name": "Device name",
-            "Pset": "PSET",
-            "Server time": "Server time",
-            "User": "User",
-            "Note": "Note",
-            "Rev": "Rev",
-            "Last time change": "Last time change",
-        })
+        rows["rev_time"] = rows["rev_time"].fillna("")
         self.table.value = pd.DataFrame(rows) if rows is not None else pd.DataFrame()
 
     def save_click(self, type):
         if type == "update" and self.selected_row.get("row"):
             row = self.selected_row["row"]
-            self.update_Jasondata(
-                row["Log ID"],
+            self.edit_rev(
+                row["log_id"],
                 self.edit_note.value,
                 self.edit_name.value
             )
@@ -226,7 +230,7 @@ class PSET_change_log_Backend:
             return None
 
         row = self.selected_row["row"]
-        id = row["Log ID"]
+        id = row["log_id"]
 
         all_rev = self.fetch_detail_rec_all_rev(id)
         if all_rev is None or all_rev.empty:
@@ -248,7 +252,7 @@ class PSET_change_log_Backend:
 
         elif event.column == "Rev0":
             self.selected_row["row"] = row
-            self.compare_rev0(row['Log ID'])
+            self.compare_rev0(row['log_id'])
 
     def on_all_time_change(self, event):
         if event.new:
@@ -280,55 +284,34 @@ class PSET_change_log_Backend:
         summary_df = pd.DataFrame()
         try:
             summary_df = pgsql.sql_to_df(query=sql, db='PSET', mod='PSET_data')
-            latest_revs = []
-            for i, row in summary_df.iterrows():
-                raw_json = row.get("jsonitem")
-                # Case NULL
-                if raw_json is None:
-                    latest_revs.append({
-                        "server time": None,
-                        "user": None,
-                        "note": None,
-                        "rev": None,
-                        "timeLastChange": None
-                    })
-                    continue
-                
-                latest_revs.append({
-                    "server time": raw_json.get("timestamp"),
-                    "user": raw_json.get("user"),
-                    "note": raw_json.get("note"),
-                    "rev": raw_json.get("rev"),
-                    "Last Time Change": raw_json.get("timeLastChange")
-                })
 
-            latest_df = pd.DataFrame(latest_revs)
-            summary_df = pd.concat([summary_df, latest_df], axis=1)
-            summary_df = summary_df.drop(columns=["jsonitem"])
-
-            # formata date
-            try:
-                summary_df["server time"] = pd.to_datetime(
-                    summary_df["server time"],
-                    utc=True,
-                    errors="coerce"
-                )
-                summary_df["server time"] = summary_df["server time"].dt.tz_localize(None)
-
-                # format as string
-                summary_df["server time"] = summary_df["server time"].dt.strftime("%Y-%m-%d %H:%M:%S")
-            except:
-                pass
-            
-            summary_df["Last Time Change"] = pd.to_datetime(
-                summary_df["Last Time Change"],
+            # format date time 
+            summary_df["time_last_change"] = pd.to_datetime(
+                summary_df["time_last_change"],
                 format="%Y-%m-%d:%H:%M:%S"
             )
-            summary_df["Last Time Change"] = summary_df["Last Time Change"].dt.strftime("%Y-%m-%d %H:%M:%S")
-            
-            summary_df.columns = [col.capitalize() for col in summary_df.columns]
-            summary_df.columns = [col.replace("_", " ") for col in summary_df.columns]
-            summary_df['Id'] = summary_df['Id'].astype(str)
+            summary_df["time_last_change"] = summary_df["time_last_change"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            summary_df["rev_time"] = pd.to_datetime(
+                summary_df["rev_time"],
+                format="%Y-%m-%d:%H:%M:%S"
+            )
+            summary_df["rev_time"] = summary_df["rev_time"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            summary_df["createdat"] = pd.to_datetime(
+                summary_df["createdat"],
+                format="%Y-%m-%d:%H:%M:%S"
+            )
+            summary_df["createdat"] = summary_df["createdat"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            summary_df["update_at"] = pd.to_datetime(
+                summary_df["update_at"],
+                format="%Y-%m-%d:%H:%M:%S"
+            )
+            summary_df["update_at"] = summary_df["update_at"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+            summary_df['log_id'] = summary_df['log_id'].astype(str)
 
             return summary_df
         
@@ -336,39 +319,58 @@ class PSET_change_log_Backend:
             logger.error(f"| Exception | {str(ex)}")
             return summary_df
 
-    def update_Jasondata(self, Id, Note, User):
+    def edit_rev(self, id, Note, User):
         query = """
-        UPDATE reporting.change_log cl
-        SET jsondata = cl.jsondata || to_jsonb(
-            jsonb_build_object(
-                'rev', latest.rev + 1,
-                'angle', latest.angle,
-                'torque', latest.torque,
-                'timeLastChange', latest."timeLastChange",
-                'note', :note,
-                'user', :user,
-                'timestamp', CURRENT_TIMESTAMP
-            )
+        INSERT INTO reporting.pset_change_log (
+            log_id,
+            controller_id,
+            device,
+            pset,
+            time_last_change,
+            rev,
+            rev_time,
+            "user",
+            note,
+            createdat,
+            torque_min,
+            torque_target,
+            torque_max,
+            angle_min,
+            angle_target,
+            angle_max
         )
-        FROM (
-            SELECT
-                (item->>'rev')::int AS rev,
-                item->'angle' AS angle,
-                item->'torque' AS torque,
-                item->'timeLastChange' AS "timeLastChange"
-            FROM reporting.change_log cl2,
-                jsonb_array_elements(cl2.jsondata) AS item
-            WHERE cl2.id = :id
-            ORDER BY (item->>'rev')::int DESC
-            LIMIT 1
-        ) latest
-        WHERE cl.id = :id;
+        SELECT
+            l.log_id,
+            l.controller_id,
+            l.device,
+            l.pset,
+            l.time_last_change,
+            (r.max_rev + 1)::varchar,
+            CURRENT_TIMESTAMP,
+            NULLIF(TRIM(:user), ''),
+            NULLIF(TRIM(:note), ''),
+            l.createdat,
+            l.torque_min,
+            l.torque_target,
+            l.torque_max,
+            l.angle_min,
+            l.angle_target,
+            l.angle_max
+        FROM reporting.pset_change_log l
+        CROSS JOIN (
+            SELECT COALESCE(MAX(rev::int), 0) AS max_rev
+            FROM reporting.pset_change_log
+            WHERE log_id = :log_id
+        ) r
+        WHERE l.log_id = :log_id
+        ORDER BY l.rev::int DESC
+        LIMIT 1
         """
 
         params = {
+            "log_id":id,
             "note": Note,
             "user": User,
-            "id": Id
         }
 
         engine = create_engine(pgsql.connect_url(db=''), echo=False)
@@ -377,7 +379,7 @@ class PSET_change_log_Backend:
             with engine.begin() as conn:
                 conn.execute(text(query), params)
         except SQLAlchemyError as e:
-            logger.error(f"| Error updating item {Id}: {e}")
+            logger.error(f"| Error updating item {id}: {e}")
 
     def csv_download_callback(self,df):
         try:
@@ -385,7 +387,8 @@ class PSET_change_log_Backend:
                 logger.warning("CSV Download: No data available")
                 return None
             logger.info(f"CSV Download triggered: {len(df)} rows")
-
+            
+            df = df.rename(columns=self.title)
             df_formatted = df.copy()
             csv_data = df_formatted.to_csv(index=False)
             
@@ -396,6 +399,7 @@ class PSET_change_log_Backend:
             return None
         
     def excel_download_callback(self, df):
+        df = df.rename(columns=self.title)
         workbook = excel_format(df, "PSET")
         output = io.BytesIO()
         workbook.save(output)
@@ -405,7 +409,6 @@ class PSET_change_log_Backend:
     
     def filter_by_checkbox(
         self,
-        Refresh_while_acquiring_Checkbox,
         Current_Week_Checkbox,
         Previous_Week_Checkbox,
         All_Time_Warning_Checkbox,
@@ -413,19 +416,42 @@ class PSET_change_log_Backend:
         date
     ):
         base_sql = """
-            SELECT 
-                c.Id,
-                c.Controller_Id,
-                c."device_name",
-                c.PSET,
-                elem.value AS jsonitem
-            FROM reporting.change_log c
-            CROSS JOIN LATERAL (
-                SELECT value
-                FROM jsonb_array_elements(c.JsonData)
-                ORDER BY (value->>'timestamp')::timestamp DESC
-                LIMIT 1
-            ) elem
+            WITH latest_pset AS (
+                SELECT
+                    t.*
+                FROM reporting.pset_change_log t
+                JOIN (
+                    SELECT
+                        device,
+                        pset,
+                        MAX(log_id) AS max_log_id
+                    FROM reporting.pset_change_log
+                    GROUP BY device, pset
+                ) m
+                    ON t.device = m.device
+                AND t.pset   = m.pset
+                AND t.log_id = m.max_log_id
+                JOIN (
+                    SELECT
+                        device,
+                        pset,
+                        log_id,
+                        MAX(rev) AS max_rev
+                    FROM reporting.pset_change_log
+                    GROUP BY device, pset, log_id
+                ) r
+                    ON t.device = r.device
+                AND t.pset   = r.pset
+                AND t.log_id = r.log_id
+                AND t.rev    = r.max_rev
+            )
+            SELECT
+                l.*,
+                b.update_at
+            FROM latest_pset l
+            LEFT JOIN reporting.device_pset_baseline b
+                ON l.device = b.device
+            AND l.pset = b.pset
         """
 
         where_clauses = []
@@ -437,45 +463,41 @@ class PSET_change_log_Backend:
         # Current + Previous week
         elif Current_Week_Checkbox and Previous_Week_Checkbox:
             where_clauses.append("""
-                (elem.value->>'timestamp')::timestamp 
-                    >= date_trunc('week', CURRENT_DATE) - INTERVAL '1 week'
+                l.createdat >= date_trunc('week', CURRENT_DATE) - INTERVAL '1 week'
             """)
 
         # Current only
         elif Current_Week_Checkbox:
             where_clauses.append("""
-                (elem.value->>'timestamp')::timestamp 
-                    >= date_trunc('week', CURRENT_DATE)
+                l.createdat >= date_trunc('week', CURRENT_DATE)
             """)
 
         # Previous only
         elif Previous_Week_Checkbox:
             where_clauses.append("""
-                (elem.value->>'timestamp')::timestamp 
-                    >= date_trunc('week', CURRENT_DATE) - INTERVAL '1 week'
-                AND (elem.value->>'timestamp')::timestamp 
-                    <=  date_trunc('week', CURRENT_DATE)
+                l.createdat >= date_trunc('week', CURRENT_DATE) - INTERVAL '1 week'
+                AND l.createdat <  date_trunc('week', CURRENT_DATE)
             """)
 
         # Device name & date
         elif len(Device_name) > 0  and date is not None:
             if "All Device" not in Device_name:
                 Device_names = ", ".join(f"'{s}'" for s in Device_name)
-                where_clauses.append(f"c.\"device_name\" IN ({Device_names})")
+                where_clauses.append(f"l.\"device\" IN ({Device_names})")
             
-            where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
-            where_clauses.append(f"(elem.value->>'timestamp')::timestamp <= '{date[1]}'")
+            where_clauses.append(f"l.createdat >= '{date[0]}'")
+            where_clauses.append(f"l.createdat <= '{date[1]}'")
         
         # Device only
         elif len(Device_name) > 0 :
             if "All Device" not in Device_name:
                 Device_names = ", ".join(f"'{s}'" for s in Device_name)
-                where_clauses.append(f"c.\"device_name\" IN ({Device_names})")
+                where_clauses.append(f"l.\"device\" IN ({Device_names})")
 
         # date only
         elif date is not None :
-            where_clauses.append(f"(elem.value->>'timestamp')::timestamp >= '{date[0]}'")
-            where_clauses.append(f"(elem.value->>'timestamp')::timestamp <= '{date[1]}'")
+            where_clauses.append(f"l.createdat >= '{date[0]}'")
+            where_clauses.append(f"l.createdat <= '{date[1]}'")
         
         
         # Build where
@@ -486,16 +508,16 @@ class PSET_change_log_Backend:
         final_sql = f"""
             {base_sql}
             {where_sql}
-            ORDER BY c.Id DESC;
+            ORDER BY l.log_id  ASC;
         """
 
         return final_sql
 
     def get_Device_name_list(self):
         query = """
-            SELECT DISTINCT "device_name"
-            FROM reporting.change_log
-            ORDER BY "device_name";
+            SELECT DISTINCT "device"
+            FROM reporting.pset_change_log
+            ORDER BY "device";
         """
 
         engine = create_engine(pgsql.connect_url(db=None), echo=False)
@@ -527,38 +549,18 @@ class PSET_change_log_Backend:
 
         return dict(groups)
     
-    # def get_model_list(self):
-    #     query = """
-    #         SELECT DISTINCT "modelofvehicle"
-    #         FROM dbo.tool_psets_models
-    #         ORDER BY "modelofvehicle";
-    #     """
-
-    #     engine = create_engine(pgsql.connect_url(db=None), echo=False)
-
-    #     try:
-    #         with engine.connect() as conn:
-    #             result = conn.execute(text(query))
-    #             model_list = [row[0] for row in result]
-
-    #         return model_list
-
-    #     except SQLAlchemyError as e:
-    #         logger.error(f"| Error get_model_list | {e}")
-    #         return []
-    
     def set_info_for_edit(self, row):
         self.selected_info.object = (
-            f"**Log ID:** {row.get('Log ID')}  \n"
-            f"**Controller ID:** {row.get('Controller ID')}  \n"
-            f"**Device:** {row.get('Device name')}  \n"
-            f"**PSET:** {row.get('PSET')}  \n"
-            f"**Last Changed Time:** {row.get('Last time change')}  \n"
-            f"**Server Time:** {row.get('Server time')}"
+            f"**Log ID:** {row.get('log_id')}  \n"
+            f"**Controller ID:** {row.get('controller_id')}  \n"
+            f"**Device:** {row.get('device')}  \n"
+            f"**PSET:** {row.get('pset')}  \n"
+            f"**Time Last Change:** {row.get('time_last_change')}  \n"
+            f"**Created At:** {row.get('createdat')}"
         )
 
-        self.edit_name.value = row.get("User", "") or ""
-        self.edit_note.value = row.get("Note", "") or ""
+        self.edit_name.value = row.get("user", "") or ""
+        self.edit_note.value = row.get("note", "") or ""
 
     def compare_rev0(self, id):
         rev = self.fetch_detail_rec_all_rev(id)
@@ -695,57 +697,53 @@ class PSET_change_log_Backend:
     
     def fetch_detail_rec_all_rev(self, id):
         Q = '''
-        SELECT
-            cl.id,
-            cl.Controller_Id,
-            cl."device_name",
-            cl.PSET,
-            j->>'rev'              AS rev,
-            j->>'user'             AS "user",
-            j->>'note'             AS note,
-            j->>'timestamp'        AS "timestamp",
-            j->>'timeLastChange'   AS "timeLastChange",
-            j->'torque'->>'torque min'     AS "torque min",
-            j->'torque'->>'torque target'  AS "torque target",
-            j->'torque'->>'torque max'     AS "torque max",
-            j->'angle'->>'angle min'       AS "angle min",
-            j->'angle'->>'angle target'    AS "angle target",
-            j->'angle'->>'angle max'       AS "angle max"
-        FROM reporting.change_log cl
-        JOIN jsonb_array_elements(cl.JsonData) AS j ON true
-        WHERE cl.id = :id
+        SELECT *
+        FROM reporting.pset_change_log
+        WHERE log_id = :log_id
+        ORDER BY rev::int ASC;
         '''
-        params = {"id": id}
+        params = {"log_id": id}
+
+        
 
         rev = pgsql.sql_to_df(query=Q, params=params,db='PSET', mod='PSET_data')
         # format time
-        rev["timestamp"] = pd.to_datetime(
-            rev["timestamp"],
-            errors="coerce", 
-            utc=True          
+        rev["time_last_change"] = pd.to_datetime(
+            rev["time_last_change"],
+            format="%Y-%m-%d:%H:%M:%S"
         )
-        rev["timeLastChange"] = pd.to_datetime(
-            rev["timeLastChange"],
-            format="%Y-%m-%d:%H:%M:%S",
-            errors="coerce"
+        rev["time_last_change"] = rev["time_last_change"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        rev["rev_time"] = pd.to_datetime(
+            rev["rev_time"],
+            format="%Y-%m-%d:%H:%M:%S"
         )
-        rev["timestamp"] = rev["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
-        rev["timeLastChange"] = rev["timeLastChange"].dt.strftime("%Y-%m-%d %H:%M:%S")
-        rev = rev.rename(columns={'id':'Log ID',
-                                  'controller_id':'Controller ID',
-                                  'device_name':'Device',
-                                  'pset':'PSET',
-                                  'rev':'Rev',
-                                  'user': 'User',
-                                  'note':'Note',
-                                  'timestamp':'Server Time',
-                                  'timeLastChange':'Time Last Change',
-                                  'torque min':'Torque Min',
-                                  'torque max':'Torque Max',
-                                  'angle min':'Angle Min',
-                                  'angle max':'Angle Max',
-                                  'torque target':'Torque Target',
-                                  'angle target':'Angle Target'})
+        rev["rev_time"] = rev["rev_time"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        rev["createdat"] = pd.to_datetime(
+            rev["createdat"],
+            format="%Y-%m-%d:%H:%M:%S"
+        )
+        rev["createdat"] = rev["createdat"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        rev['log_id'] = rev['log_id'].astype(str)
+
+        rev = rev.rename(columns={"log_id": "Log ID",    
+            "controller_id": "Controller ID",
+            "device": "Device name",
+            "pset": "PSET",
+            "time_last_change": "Time Last Change",
+            "rev": "Rev",
+            "rev_time": "Revision Time",
+            "user": "User",
+            "note": "Note",
+            "createdat": "Created At",
+            "torque_max": "Torque Max",
+            "torque_target": "Torque Target",
+            "torque_min": "Torque Min",
+            "angle_max": "Angle Max",
+            "angle_target": "Angle Target",
+            "angle_min": "Angle Min"})
 
         return(rev)
     

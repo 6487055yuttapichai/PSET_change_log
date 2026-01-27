@@ -32,10 +32,10 @@ tasks:
           "stringifiedDataJSON"->'payload'->>'torqueMaxLimit'    AS torque_max,
           "stringifiedDataJSON"->'payload'->>'timeLastChange'    AS change_time,
           "deviceId"
-        FROM dbo."Order_EOR"
+        FROM dbo."Order_EOR_test9"
         WHERE
-          "createdAt" >= NOW() - INTERVAL '10 minutes'
-          AND "createdAt" < NOW()
+          "createdAt" >= '2026-01-26'
+          AND "createdAt" < '2026-01-27'
       ) t
       LEFT JOIN dbo."Equipment_Device" ed
         ON t."deviceId" = ed."id"
@@ -66,30 +66,13 @@ tasks:
     password: tKotT9xpeT
     sql: |
       SELECT
-        controller_id,
-        device_name,
+        id,
+        device,
         pset,
-
-        j->>'rev'              AS rev,
-        j->>'user'             AS "user",
-        j->>'note'             AS note,
-        j->>'timestamp'        AS "timestamp",
-        j->>'timeLastChange'   AS "timeLastChange",
-
-        j->'torque'->>'torque min'     AS "torque min",
-        j->'torque'->>'torque target'  AS "torque target",
-        j->'torque'->>'torque max'     AS "torque max",
-
-        j->'angle'->>'angle min'       AS "angle min",
-        j->'angle'->>'angle target'    AS "angle target",
-        j->'angle'->>'angle max'       AS "angle max"
-
-      FROM reporting.change_log,
-          jsonb_array_elements(JsonData) AS j
-      WHERE (j->>'rev')::int = (
-          SELECT MAX((j2->>'rev')::int)
-          FROM jsonb_array_elements(JsonData) AS j2
-      );
+        time_last_change,
+        created_at,
+        update_at
+      FROM reporting.device_pset_baseline;
     fetch: true
   
   - id: add_controller_field
@@ -141,38 +124,35 @@ tasks:
       - updates.json
       - new_record.json
     script: |
-      from datetime import datetime
+      from datetime import datetime, timezone
       import re
       import json
 
-      def norm(v):
+      TIME_FORMATS = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d:%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%SZ",
+      ]
+
+      def parse_time(v):
         if v is None:
-          return None
-        # handle string
+            return None
+
+        if isinstance(v, datetime):
+            return v.astimezone(timezone.utc) if v.tzinfo else v.replace(tzinfo=timezone.utc)
+
         if isinstance(v, str):
             v = v.strip()
-            if v == '' or v.lower() == 'null':
-                return None
-            # normalize time formats
-            time_candidates = [
-                "%Y-%m-%d %H:%M:%S",
-                "%Y-%m-%d:%H:%M:%S",
-                "%Y-%m-%dT%H:%M:%S",
-            ]
-            for fmt in time_candidates:
+            for fmt in TIME_FORMATS:
                 try:
-                    return datetime.strptime(v, fmt)
+                    dt = datetime.strptime(v, fmt)
+                    return dt.replace(tzinfo=timezone.utc)
                 except ValueError:
                     pass
-            # numeric string
-            try:
-                return float(v)
-            except ValueError:
-                return v
-        # numbers stay numbers
-        if isinstance(v, (int, float)):
-            return float(v)
-        return v
+            raise ValueError(f"Unsupported datetime format: {v}")
+
+        return None
 
       def norm_key(v):
         if v is None:
@@ -188,7 +168,7 @@ tasks:
         base = json.load(f)
       
       base_map = {
-          (norm_key(b.get("device_name")), norm_key(b.get("pset"))): b
+          (norm_key(b.get("device")), norm_key(b.get("pset"))): b
           for b in base
       }
 
@@ -198,58 +178,34 @@ tasks:
       for p in prod:
         Device_name = norm_key(p.get("device_name"))
         pset = norm_key(p.get("pset_id"))
-        controller_serial_number = norm_key(p.get("controller_serial_number"))
         
         b = base_map.get((Device_name, pset))
         
-        new_json = {
-          "timeLastChange": p.get("change_time"),
-          "torque": {
-            "torque min": p.get("torque_min"),
-            "torque target": p.get("torque_target"),
-            "torque max": p.get("torque_max"),
-          },
-          "angle": {
-            "angle target": p.get("angle_target"),
-            "angle min": p.get("angle_min"),
-            "angle max": p.get("angle_max"),
-          }
-        }
         if not b: #find new record 
           new_record.append({
-              "Device_name": p.get("device_name"),
+              "device": p.get("device_name"),
               "pset": pset,
-              "details": new_json,
-              "controller_id": controller_serial_number
+              "time_last_change": p.get("change_time"),
           })
           continue
 
-        changed = False
-
-        checks = [
-            ("torque_min", "torque min"),
-            ("torque_target", "torque target"),
-            ("torque_max", "torque max"),
-            ("angle_min", "angle min"),
-            ("angle_target", "angle target"),
-            ("angle_max", "angle max"),
-        ]
-
-        if norm(p.get("change_time")) == norm(b.get("timeLastChange")):
-          continue
-        else:
-          for pf, bf in checks:
-              if norm(p.get(pf)) != norm(b.get(bf)):
-                changed = True
-                break
-
-        if changed:
+        if parse_time(p.get("change_time")) != parse_time(b.get("time_last_change")):
           updates.append({
-            "controller_id": b.get("controller_id"),
-            "Device_name": p.get("device_name"),
+            "controller_id": (
+                p.get("controller_serial_number")
+                if p.get("controller_serial_number") is not None
+                else "__NULL__"
+            ),
+            "device": p.get("device_name"),
             "pset": pset,
-            "details": new_json
-          })
+            "time_last_change": p.get("change_time"),
+            "torque_min": p.get("torque_min"),
+            "torque_target": p.get("torque_target"),
+            "torque_max": p.get("torque_max"),
+            "angle_min": p.get("angle_min"),
+            "angle_target": p.get("angle_target"),
+            "angle_max": p.get("angle_max"),
+            })
 
       with open("updates.json", "w") as f:
           json.dump(updates, f)
@@ -267,58 +223,70 @@ tasks:
         username: postgres
         password: tKotT9xpeT
         sql: |
-          INSERT INTO reporting.change_log (
-            controller_id,
-            device_name,
-            pset,
-            jsondata,
-            createdat
+          INSERT INTO reporting.device_pset_baseline (
+              device,
+              pset,
+              time_last_change,
+              created_at,
+              update_at
           )
           VALUES (
-            '{{ json(taskrun.value).controller_id ?? null }}',
-            '{{ json(taskrun.value).Device_name }}',
-            '{{ json(taskrun.value).pset }}',
-            jsonb_build_array(
-              jsonb_build_object(
-                'rev', 0,
-                'user', '',
-                'note', '',
-                'timestamp', CURRENT_TIMESTAMP,
-                'timeLastChange', '{{ json(taskrun.value).details.timeLastChange | json }}'::jsonb,
-                'torque', '{{ json(taskrun.value).details.torque | json }}'::jsonb,
-                'angle', '{{ json(taskrun.value).details.angle | json }}'::jsonb
-              )
-            ),
-            CURRENT_TIMESTAMP
-          )
-          RETURNING id;
+              '{{ json(taskrun.value).device }}',
+              '{{ json(taskrun.value).pset }}',
+              '{{ json(taskrun.value).time_last_change }}',
+              CURRENT_TIMESTAMP,
+              CURRENT_TIMESTAMP
+          );
 
   - id: apply_pset_update
     type: io.kestra.plugin.core.flow.ForEach
     values: "{{ json(read(outputs.compare_pset.outputFiles['updates.json'])) }}"
     tasks:
-      - id: update_pset
+      - id: update_base_line_and_insert_change_log
         type: io.kestra.plugin.jdbc.postgresql.Query
         url: jdbc:postgresql://postgresql_17:5432/portal
         username: postgres
         password: tKotT9xpeT
         sql: |
-          UPDATE reporting.change_log
-          SET jsondata = jsondata || jsonb_build_object(
-              'rev', (
-                SELECT COALESCE(MAX((item->>'rev')::int), 0) + 1
-                FROM jsonb_array_elements(jsondata) AS item
-              ),
-              'user','',
-              'note','',
-              'timestamp', CURRENT_TIMESTAMP,
-              'timeLastChange', '{{ json(taskrun.value).details.timeLastChange }}',
-              'torque', '{{ json(taskrun.value).details.torque | json }}'::jsonb,
-              'angle', '{{ json(taskrun.value).details.angle | json }}'::jsonb
+          BEGIN;
+
+          UPDATE reporting.device_pset_baseline
+          SET
+            time_last_change = '{{ json(taskrun.value).time_last_change }}',
+            update_at = CURRENT_TIMESTAMP
+          WHERE device = '{{ json(taskrun.value).device }}'
+            AND pset = '{{ json(taskrun.value).pset }}';
+
+          INSERT INTO reporting.pset_change_log (
+            controller_id,
+            device,
+            pset,
+            time_last_change,
+            rev,
+            createdat,
+            torque_min,
+            torque_target,
+            torque_max,
+            angle_min,
+            angle_target,
+            angle_max
           )
-          WHERE 
-            controller_id = '{{ json(taskrun.value).controller_id }}'
-            AND pset = '{{ json(taskrun.value).pset }}'
+          VALUES (
+            NULLIF('{{ json(taskrun.value).controller_id }}', '__NULL__'),
+            '{{ json(taskrun.value).device }}',
+            '{{ json(taskrun.value).pset }}',
+            '{{ json(taskrun.value).time_last_change }}',
+            '0',
+            CURRENT_TIMESTAMP,
+            {{ json(taskrun.value).torque_min }},
+            {{ json(taskrun.value).torque_target }},
+            {{ json(taskrun.value).torque_max }},
+            {{ json(taskrun.value).angle_min }},
+            {{ json(taskrun.value).angle_target }},
+            {{ json(taskrun.value).angle_max }}
+          );
+
+          COMMIT;
 
   - id: cleanup
     type: io.kestra.plugin.core.execution.PurgeExecutions
