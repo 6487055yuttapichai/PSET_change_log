@@ -1,19 +1,15 @@
 import io
 import panel as pn
-import psycopg2
 from io import BytesIO, StringIO
 import pandas as pd
 from collections import defaultdict
-from config.dev import _HOST, _PORT, _UID, _PWD, _DB
-from shared.downloads import excel_format
-from shared.tdm_logging import logger, log_error, class_method_name
-from shared.sql import PGSQL
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-from datetime import datetime
-import json
+
+from config.prod import _HOST, _PORT, _UID, _PWD, _DB
+from shared.downloads import excel_format
+from shared.tdm_logging import logger, log_error
+from shared.sql import PGSQL
 
 
 pgsql = PGSQL()
@@ -111,14 +107,27 @@ class PSET_change_log_Backend:
             "rev_time": "Revision Time",
             "user": "User",
             "note": "Note",
-            "createdat": "Created At",
+            "createdat": "Registered Time",
             "torque_max": "Torque Max",
             "torque_target": "Torque Target",
             "torque_min": "Torque Min",
             "angle_max": "Angle Max",
             "angle_target": "Angle Target",
-            "angle_min": "Angle Min",
-            "update_at": "Update At"}
+            "angle_min": "Angle Min"}
+        text_align = {
+            'log_id': 'center',
+            'controller_id': 'center',
+            'pset': 'center',
+            'rev': 'center',
+            'user': 'center',
+            'note': 'center',
+            'torque_min': 'center',
+            'torque_target': 'center',
+            'torque_max': 'center',
+            'angle_min': 'center',
+            'angle_target': 'center',
+            'angle_max': 'center'
+        }
         self.table = pn.widgets.Tabulator(
             buttons={
                 "edit": '<button class="btn btn-dark btn-lg">Edit</button>',
@@ -127,20 +136,14 @@ class PSET_change_log_Backend:
             pagination="local",
             show_index=False,
             disabled=True,
-            page_size=20,
-            height=800,
+            page_size=50,
+            height=730,
             theme = 'bootstrap5',
             header_align='center',
             layout="fit_data_table",
-            titles = self.title 
+            titles = self.title,
+            text_align=text_align
         )
-
-        self.table.text_align = {
-            "Log ID": "center",
-            "PSET": "center",
-            "Rev": "center",
-        }
-
 
         self.table.on_click(self.on_table_edit_click)
 
@@ -304,11 +307,11 @@ class PSET_change_log_Backend:
             )
             summary_df["createdat"] = summary_df["createdat"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-            summary_df["update_at"] = pd.to_datetime(
-                summary_df["update_at"],
-                format="%Y-%m-%d:%H:%M:%S"
-            )
-            summary_df["update_at"] = summary_df["update_at"].dt.strftime("%Y-%m-%d %H:%M:%S")
+            # summary_df["update_at"] = pd.to_datetime(
+            #     summary_df["update_at"],
+            #     format="%Y-%m-%d:%H:%M:%S"
+            # )
+            # summary_df["update_at"] = summary_df["update_at"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
             summary_df['log_id'] = summary_df['log_id'].astype(str)
@@ -416,47 +419,24 @@ class PSET_change_log_Backend:
         date
     ):
         base_sql = """
-            WITH latest_pset AS (
+            WITH ranked_logs AS (
                 SELECT
-                    t.*
-                FROM reporting.pset_change_log t
-                JOIN (
-                    SELECT
-                        device,
-                        pset,
-                        MAX(log_id) AS max_log_id
-                    FROM reporting.pset_change_log
-                    GROUP BY device, pset
-                ) m
-                    ON t.device = m.device
-                AND t.pset   = m.pset
-                AND t.log_id = m.max_log_id
-                JOIN (
-                    SELECT
-                        device,
-                        pset,
-                        log_id,
-                        MAX(rev) AS max_rev
-                    FROM reporting.pset_change_log
-                    GROUP BY device, pset, log_id
-                ) r
-                    ON t.device = r.device
-                AND t.pset   = r.pset
-                AND t.log_id = r.log_id
-                AND t.rev    = r.max_rev
+                    l.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY l.log_id
+                        ORDER BY l.rev DESC
+                    ) AS rn
+                FROM reporting.pset_change_log l
             )
             SELECT
-                l.*,
-                b.update_at
-            FROM latest_pset l
-            LEFT JOIN reporting.device_pset_baseline b
-                ON l.device = b.device
-            AND l.pset = b.pset
+                l.*
+            FROM ranked_logs l
+            WHERE l.rn = 1
         """
 
         where_clauses = []
 
-        # All time → no where clause
+        # All time → no extra where
         if All_Time_Warning_Checkbox:
             pass
 
@@ -480,35 +460,34 @@ class PSET_change_log_Backend:
             """)
 
         # Device name & date
-        elif len(Device_name) > 0  and date is not None:
+        elif len(Device_name) > 0 and date is not None:
             if "All Device" not in Device_name:
-                Device_names = ", ".join(f"'{s}'" for s in Device_name)
-                where_clauses.append(f"l.\"device\" IN ({Device_names})")
-            
-            where_clauses.append(f"l.createdat >= '{date[0]}'")
-            where_clauses.append(f"l.createdat <= '{date[1]}'")
-        
-        # Device only
-        elif len(Device_name) > 0 :
-            if "All Device" not in Device_name:
-                Device_names = ", ".join(f"'{s}'" for s in Device_name)
-                where_clauses.append(f"l.\"device\" IN ({Device_names})")
+                device_names = ", ".join(f"'{s}'" for s in Device_name)
+                where_clauses.append(f'l."device" IN ({device_names})')
 
-        # date only
-        elif date is not None :
             where_clauses.append(f"l.createdat >= '{date[0]}'")
             where_clauses.append(f"l.createdat <= '{date[1]}'")
-        
-        
-        # Build where
+
+        # Device only
+        elif len(Device_name) > 0:
+            if "All Device" not in Device_name:
+                device_names = ", ".join(f"'{s}'" for s in Device_name)
+                where_clauses.append(f'l."device" IN ({device_names})')
+
+        # Date only
+        elif date is not None:
+            where_clauses.append(f"l.createdat >= '{date[0]}'")
+            where_clauses.append(f"l.createdat <= '{date[1]}'")
+
+        # Build where clause
         where_sql = ""
         if where_clauses:
-            where_sql = "WHERE " + " AND ".join(where_clauses)
+            where_sql = " AND " + " AND ".join(where_clauses)
 
         final_sql = f"""
             {base_sql}
             {where_sql}
-            ORDER BY l.log_id  ASC;
+            ORDER BY l.log_id ASC;
         """
 
         return final_sql
@@ -556,7 +535,7 @@ class PSET_change_log_Backend:
             f"**Device:** {row.get('device')}  \n"
             f"**PSET:** {row.get('pset')}  \n"
             f"**Time Last Change:** {row.get('time_last_change')}  \n"
-            f"**Created At:** {row.get('createdat')}"
+            f"**Registered Time:** {row.get('createdat')}"
         )
 
         self.edit_name.value = row.get("user", "") or ""
@@ -592,7 +571,6 @@ class PSET_change_log_Backend:
 
             df_left = rev_left.to_frame(name=f"Revision {idx_left}")
             df_right = rev_right.to_frame(name=f"Revision {idx_right}")
-
             table_border_style = [
                 {"selector": "th", "props": [("border", "1px solid #555")]},
                 {"selector": "td", "props": [("border", "1px solid #555")]}
@@ -697,16 +675,31 @@ class PSET_change_log_Backend:
     
     def fetch_detail_rec_all_rev(self, id):
         Q = '''
-        SELECT *
+        SELECT 
+            log_id,
+            controller_id,
+            device,
+            pset,
+            time_last_change,
+            rev,
+            rev_time,
+            "user",
+            note,
+            createdat,
+            torque_min,
+            torque_target,
+            torque_max,
+            angle_min,
+            angle_target,
+            angle_max
         FROM reporting.pset_change_log
         WHERE log_id = :log_id
         ORDER BY rev::int ASC;
         '''
         params = {"log_id": id}
 
+        rev = pgsql.sql_to_df(query=Q, params=params,db='portal', mod='PSET_data')
         
-
-        rev = pgsql.sql_to_df(query=Q, params=params,db='PSET', mod='PSET_data')
         # format time
         rev["time_last_change"] = pd.to_datetime(
             rev["time_last_change"],
@@ -727,6 +720,17 @@ class PSET_change_log_Backend:
         rev["createdat"] = rev["createdat"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
         rev['log_id'] = rev['log_id'].astype(str)
+        rev['torque_min'] = rev['torque_min'].map("{:.2f}".format)
+        rev['torque_target'] = rev['torque_target'].map("{:.2f}".format)
+        rev['torque_max'] = rev['torque_max'].map("{:.2f}".format)
+        rev['angle_min'] = rev['angle_min'].map("{:.2f}".format)
+        rev['angle_target'] = rev['angle_target'].map("{:.2f}".format)
+        rev['angle_max'] = rev['angle_max'].map("{:.2f}".format)
+        
+        rev["rev"] = rev["rev"].fillna("")
+        rev["rev_time"] = rev["rev_time"].fillna("")
+        rev["user"] = rev["user"].fillna("")
+        rev["note"] = rev["note"].fillna("")
 
         rev = rev.rename(columns={"log_id": "Log ID",    
             "controller_id": "Controller ID",
@@ -737,13 +741,13 @@ class PSET_change_log_Backend:
             "rev_time": "Revision Time",
             "user": "User",
             "note": "Note",
-            "createdat": "Created At",
+            "createdat": "Registered Time",
             "torque_max": "Torque Max",
             "torque_target": "Torque Target",
             "torque_min": "Torque Min",
             "angle_max": "Angle Max",
             "angle_target": "Angle Target",
             "angle_min": "Angle Min"})
-
+        
         return(rev)
     
