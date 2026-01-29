@@ -66,7 +66,7 @@ class PSET_change_log_Backend:
         self.pop_up_Rev = pn.layout.Modal(
             self.rev_compare_body,
             open=False,
-            width=900,
+            width=1200,
             height=680
         )
         self.btn_cancel_Rev.on_click(lambda e: setattr(self.pop_up_Rev, "open", False))
@@ -128,6 +128,14 @@ class PSET_change_log_Backend:
             'angle_target': 'center',
             'angle_max': 'center'
         }
+        self.format_id = {
+            "log_id": {
+                "type": "function",
+                "params": {
+                    "function": "function(cell){ return String(cell.getValue()).replace(/,/g,''); }"
+                }
+            }
+        }
         self.table = pn.widgets.Tabulator(
             buttons={
                 "edit": '<button class="btn btn-dark btn-lg">Edit</button>',
@@ -142,7 +150,8 @@ class PSET_change_log_Backend:
             header_align='center',
             layout="fit_data_table",
             titles = self.title,
-            text_align=text_align
+            text_align=text_align,
+            formatters = self.format_id
         )
 
         self.table.on_click(self.on_table_edit_click)
@@ -233,9 +242,12 @@ class PSET_change_log_Backend:
             return None
 
         row = self.selected_row["row"]
-        id = row["log_id"]
+        device = row["device"]
+        pset = row["pset"]
 
-        all_rev = self.fetch_detail_rec_all_rev(id)
+
+        all_rev = self.fetch_detail_rec_all_rev(device,pset)
+        all_rev = all_rev.rename(columns=self.title)
         if all_rev is None or all_rev.empty:
             return None
         
@@ -255,7 +267,7 @@ class PSET_change_log_Backend:
 
         elif event.column == "Rev0":
             self.selected_row["row"] = row
-            self.compare_rev0(row['log_id'])
+            self.compare_rev0(row['device'],row['pset'])
 
     def on_all_time_change(self, event):
         if event.new:
@@ -314,7 +326,7 @@ class PSET_change_log_Backend:
             # summary_df["update_at"] = summary_df["update_at"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-            summary_df['log_id'] = summary_df['log_id'].astype(str)
+            # summary_df['log_id'] = summary_df['log_id'].astype(str)
 
             return summary_df
         
@@ -541,108 +553,57 @@ class PSET_change_log_Backend:
         self.edit_name.value = row.get("user", "") or ""
         self.edit_note.value = row.get("note", "") or ""
 
-    def compare_rev0(self, id):
-        rev = self.fetch_detail_rec_all_rev(id)
+    def compare_rev0(self, device, pset):
+        rev = self.fetch_detail_rec_all_rev(device, pset)
 
         if rev is None or rev.empty:
             return
-
-        rev_indexes = list(range(len(rev)))
         
-        self.rev_select_left = pn.widgets.Select(
-            options=rev_indexes,
-            value=0,                 # default = rev0
-            width=160,
-            align="start"
+        show_cols = [
+            "log_id",
+            "time_last_change",
+            "rev",
+            "user",
+            "rev_time",
+            "note",
+            "torque_min",
+            "torque_target",
+            "torque_max",
+            "angle_min",
+            "angle_target",
+            "angle_max"
+        ]
+        rev_table = pn.widgets.Tabulator(
+            rev[show_cols],
+            pagination="local",
+            page_size=50,
+            height=500,
+            layout="fit_data_table",
+            show_index=False,
+            theme="bootstrap5",
+            header_align="center",
+            selectable=False,
+            formatters = self.format_id,
+            titles = self.title,
         )
-        
-        
-        self.rev_select_right = pn.widgets.Select(
-            options=rev_indexes,
-            value=rev_indexes[-1],   # default = latest
-            width=160,
-            align="end"
-        )
-
-        def update_view(idx_left, idx_right):
-            rev_left = rev.iloc[idx_left]
-            rev_right = rev.iloc[idx_right]
-            changed_colum = self.compare_2_df(rev_left, rev_right)
-
-            df_left = rev_left.to_frame(name=f"Revision {idx_left}")
-            df_right = rev_right.to_frame(name=f"Revision {idx_right}")
-            table_border_style = [
-                {"selector": "th", "props": [("border", "1px solid #555")]},
-                {"selector": "td", "props": [("border", "1px solid #555")]}
-            ]
-
-            styled_left = (
-                df_left.style
-                .set_properties(
-                    subset=pd.IndexSlice[changed_colum, :],
-                    **{"background-color": "#ff6adf", "font-weight": "bold"}
-                )
-                .set_table_styles(table_border_style)
-            )
-
-            styled_right = (
-                df_right.style
-                .set_properties(
-                    subset=pd.IndexSlice[changed_colum, :],
-                    **{"background-color": "#6ae1ff", "font-weight": "bold"}
-                )
-                .set_table_styles(table_border_style)
-            )
-
-            pane_left = pn.pane.DataFrame(styled_left, height=430, sizing_mode="stretch_width")
-            pane_right = pn.pane.DataFrame(styled_right, height=430, sizing_mode="stretch_width")
-
-            return pn.Row(
-                pn.Column(pane_left, sizing_mode="stretch_width"),
-                pn.Column(pane_right, sizing_mode="stretch_width"),
-            )
-        
-        compare_row = update_view(
-            self.rev_select_left.value,
-            self.rev_select_right.value
-        )
-
-        def _on_change(event):
-            self.rev_compare_body[1] = update_view(
-                self.rev_select_left.value,
-                self.rev_select_right.value
-            )
-
-        self.rev_select_left.param.watch(_on_change, "value")
-        self.rev_select_right.param.watch(_on_change, "value")
 
         header = pn.Column(
             pn.Row(
-                pn.pane.Markdown("## Revision Comparison"),
+                pn.pane.Markdown("## Revision History", margin=(0, 0, 0, 0)),
                 sizing_mode="stretch_width"
             ),
-            pn.Row(
-                pn.Column(
-                    pn.pane.Markdown("**Revision base**"),
-                    self.rev_select_left,
-                    width=220
-                ),
-                pn.Spacer(sizing_mode="stretch_width"), 
-                pn.Column(   
-                    pn.pane.Markdown("**Revision latest**", styles={"text-align": "right", "width": "100%"}),
-                    self.rev_select_right,
-                    width=220,
-                    align="end"
-                ),
-                sizing_mode="stretch_width"
+            pn.pane.Markdown(
+                f"**Device:** **`{device}`** | **PSET:** **`{pset}`**",
+                margin=(0, 0, 5, 0)
             ),
-            sizing_mode="stretch_width"
+            sizing_mode="stretch_width",
+            margin=(0, 0, 5, 0)
         )
-
         self.rev_compare_body[:] = [
             header,
-            compare_row,
-            pn.Spacer(height=20),
+            pn.Spacer(height=5),
+            rev_table,
+            pn.Spacer(height=10),
             pn.Row(
                 pn.Spacer(),
                 self.btn_download_Rev,
@@ -652,28 +613,10 @@ class PSET_change_log_Backend:
                 sizing_mode="stretch_width"
             )
         ]
-        
+
         self.pop_up_Rev.open = True
     
-    def compare_2_df(self, df_rev0, df_rev_latest):
-        s0 = df_rev0.squeeze()
-        s1 = df_rev_latest.squeeze()
-
-        changed_fields = []
-
-        for field in s0.index:
-            v0 = s0.get(field)
-            v1 = s1.get(field)
-
-            if pd.isna(v0) and pd.isna(v1):
-                continue
-
-            if v0 != v1:
-                changed_fields.append(field)
-
-        return changed_fields
-    
-    def fetch_detail_rec_all_rev(self, id):
+    def fetch_detail_rec_all_rev(self ,device, pset):
         Q = '''
         SELECT 
             log_id,
@@ -693,13 +636,17 @@ class PSET_change_log_Backend:
             angle_target,
             angle_max
         FROM reporting.pset_change_log
-        WHERE log_id = :log_id
-        ORDER BY rev::int ASC;
+        WHERE device = :device
+        AND pset = :pset
+        ORDER BY
+            log_id DESC,
+            rev::int DESC;
         '''
-        params = {"log_id": id}
+        params = {"device": device,
+                  "pset": pset}
 
         rev = pgsql.sql_to_df(query=Q, params=params,db='portal', mod='PSET_data')
-        
+
         # format time
         rev["time_last_change"] = pd.to_datetime(
             rev["time_last_change"],
@@ -719,7 +666,6 @@ class PSET_change_log_Backend:
         )
         rev["createdat"] = rev["createdat"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        rev['log_id'] = rev['log_id'].astype(str)
         rev['torque_min'] = rev['torque_min'].map("{:.2f}".format)
         rev['torque_target'] = rev['torque_target'].map("{:.2f}".format)
         rev['torque_max'] = rev['torque_max'].map("{:.2f}".format)
@@ -731,23 +677,6 @@ class PSET_change_log_Backend:
         rev["rev_time"] = rev["rev_time"].fillna("")
         rev["user"] = rev["user"].fillna("")
         rev["note"] = rev["note"].fillna("")
-
-        rev = rev.rename(columns={"log_id": "Log ID",    
-            "controller_id": "Controller ID",
-            "device": "Device name",
-            "pset": "PSET",
-            "time_last_change": "Time Last Change",
-            "rev": "Rev",
-            "rev_time": "Revision Time",
-            "user": "User",
-            "note": "Note",
-            "createdat": "Registered Time",
-            "torque_max": "Torque Max",
-            "torque_target": "Torque Target",
-            "torque_min": "Torque Min",
-            "angle_max": "Angle Max",
-            "angle_target": "Angle Target",
-            "angle_min": "Angle Min"})
         
         return(rev)
     
